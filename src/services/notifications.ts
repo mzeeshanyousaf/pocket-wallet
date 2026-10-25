@@ -135,14 +135,19 @@ export const NotificationService = {
 
   async scheduleSalaryNotification(
     salaryAmount: number,
-    dayOfMonth: number
+    dayOfMonth: number,
+    forceNextMonth: boolean = false
   ): Promise<string | undefined> {
     const today = new Date();
     // Determine the next target date for this dayOfMonth
     let targetYear = today.getFullYear();
     let targetMonth = today.getMonth();
 
-    if (today.getDate() > dayOfMonth) {
+    if (
+      forceNextMonth ||
+      today.getDate() > dayOfMonth ||
+      (today.getDate() === dayOfMonth && today.getHours() >= 9)
+    ) {
       targetMonth += 1;
       if (targetMonth > 11) {
         targetMonth = 0;

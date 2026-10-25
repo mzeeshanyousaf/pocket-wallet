@@ -18,6 +18,7 @@ import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
 import { Friend } from '../types';
+import { getDaysUntil } from '../utils/formatters';
 
 export const FriendsLedgerScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -33,9 +34,6 @@ export const FriendsLedgerScreen: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     const list = friends.filter((f) => f.name.toLowerCase().includes(q));
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const getScore = (f: Friend) => {
       const net = f.netBalance;
       if (net === 0) return -1;
@@ -46,7 +44,7 @@ export const FriendsLedgerScreen: React.FC = () => {
       );
       let isOverdue = false;
       friendPending.forEach((e) => {
-        if (new Date(e.recoveryDate).getTime() < today.getTime()) {
+        if (getDaysUntil(e.recoveryDate).isPast) {
           isOverdue = true;
         }
       });

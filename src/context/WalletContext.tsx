@@ -401,14 +401,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     [balance, bills, transactions]
   );
 
-  // Edit Bill
+  // Edit Bill — re-schedules notification if dueDate, title, or estimatedAmount changed
   const editBill = useCallback(
     async (billId: string, updates: Partial<Bill>) => {
       const updatedBills = await Promise.all(
         bills.map(async (b) => {
           if (b.id === billId) {
             const updated = { ...b, ...updates };
-            if (updates.dueDate && updates.dueDate !== b.dueDate) {
+            const shouldReschedule =
+              (updates.dueDate && updates.dueDate !== b.dueDate) ||
+              (updates.title && updates.title !== b.title) ||
+              (updates.estimatedAmount !== undefined &&
+                updates.estimatedAmount !== b.estimatedAmount);
+
+            if (shouldReschedule) {
               if (b.notificationId) {
                 await NotificationService.cancelNotification(b.notificationId);
               }
@@ -474,7 +480,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       const nextNotifId = await NotificationService.scheduleSalaryNotification(
         salaryConfig.amount,
-        salaryConfig.dayOfMonth
+        salaryConfig.dayOfMonth,
+        true
       );
 
       const updatedSalaryConfig: SalaryConfig = {
