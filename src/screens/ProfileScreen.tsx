@@ -365,37 +365,37 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             </>
           )}
 
-          <View style={styles.separator} />
-
-          {/* Biometrics / Fingerprint Toggle */}
-          <View style={styles.settingToggleRow}>
-            <View style={styles.settingIconBox}>
-              <MaterialIcons
-                name={biometricName === 'Face ID' ? 'face' : 'fingerprint'}
-                size={20}
-                color={colors.ink}
-              />
-            </View>
-            <View style={styles.settingTextContainer}>
-              <Text style={styles.settingTitle}>{biometricName} unlock</Text>
-              <Text style={styles.settingSubtitle}>
-                {!hasBiometrics
-                  ? 'No biometric sensor detected'
-                  : !securitySettings.isPinEnabled || !securitySettings.pin
-                  ? 'Set 4-digit PIN first to activate'
-                  : securitySettings.biometricsEnabled
-                  ? `Active · Unlock with ${biometricName} or PIN`
-                  : `Disabled · Unlock with PIN only`}
-              </Text>
-            </View>
-            <Switch
-              value={securitySettings.biometricsEnabled && !!securitySettings.pin}
-              onValueChange={handleToggleBiometrics}
-              disabled={!hasBiometrics}
-              trackColor={{ false: colors.line, true: colors.brand }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+          {/* Biometrics / Fingerprint Toggle — only shown when device supports it */}
+          {hasBiometrics && (
+            <>
+              <View style={styles.separator} />
+              <View style={styles.settingToggleRow}>
+                <View style={styles.settingIconBox}>
+                  <MaterialIcons
+                    name={biometricName === 'Face ID' ? 'face' : 'fingerprint'}
+                    size={20}
+                    color={colors.ink}
+                  />
+                </View>
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingTitle}>{biometricName} unlock</Text>
+                  <Text style={styles.settingSubtitle}>
+                    {!securitySettings.isPinEnabled || !securitySettings.pin
+                      ? 'Set 4-digit PIN first to activate'
+                      : securitySettings.biometricsEnabled
+                      ? `Active · Unlock with ${biometricName} or PIN`
+                      : `Disabled · Unlock with PIN only`}
+                  </Text>
+                </View>
+                <Switch
+                  value={securitySettings.biometricsEnabled && !!securitySettings.pin}
+                  onValueChange={handleToggleBiometrics}
+                  trackColor={{ false: colors.line, true: colors.brand }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            </>
+          )}
         </View>
 
         {/* Section: Data & Backup */}

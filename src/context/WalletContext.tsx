@@ -72,6 +72,7 @@ interface WalletContextType extends WalletState {
   ) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   resetAllData: () => Promise<void>;
+  deleteFriend: (friendId: string) => Promise<void>;
   updateUserProfile: (profile: Partial<UserProfile>) => Promise<void>;
   updateSecuritySettings: (settings: Partial<SecuritySettings>) => Promise<void>;
   isUnlocked: boolean;
@@ -253,22 +254,53 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     [balance, bills, transactions]
   );
 
-  // Unpay / Reopen Bill
+  // Unpay / Reopen Bill — reverses the balance deduction and removes linked bill_payment tx
   const unpayBill = useCallback(
     async (billId: string) => {
+      const targetBill = bills.find((b) => b.id === billId);
+      if (!targetBill || !targetBill.isPaid) return;
+
+      // Find the most recent bill_payment transaction for this bill to reverse
+      const relatedTx = [...transactions]
+        .reverse()
+        .find(
+          (t) =>
+            t.type === 'bill_payment' &&
+            (t.relatedBillId === billId || t.description?.includes(targetBill.title))
+        );
+
+      let newBalance = balance;
+      let updatedTransactions = transactions;
+
+      if (relatedTx) {
+        // Refund the amount that was deducted
+        newBalance = balance + relatedTx.amount;
+        updatedTransactions = transactions.filter((t) => t.id !== relatedTx.id);
+      }
+
       const newBills = bills.map((b) => {
         if (b.id === billId) {
           return {
             ...b,
             isPaid: false,
+            lastPaidDate: undefined,
+            lastPaidAmount: undefined,
           };
         }
         return b;
       });
+
+      setBalance(newBalance);
+      setTransactions(updatedTransactions);
       setBills(newBills);
-      await StorageService.saveBills(newBills);
+
+      await Promise.all([
+        StorageService.saveBalance(newBalance),
+        StorageService.saveTransactions(updatedTransactions),
+        StorageService.saveBills(newBills),
+      ]);
     },
-    [bills]
+    [balance, bills, transactions]
   );
 
   // Add Bill
@@ -306,6 +338,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   // Advance Recurring Bill to Next Cycle
+  // If the bill was paid, first reverses the balance/transaction (unpay), then advances.
   const advanceBillCycle = useCallback(
     async (billId: string) => {
       const target = bills.find((b) => b.id === billId);
@@ -316,6 +349,23 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         target.frequency,
         target.frequencyDays
       );
+
+      // If the bill is currently paid, reverse its payment transaction first
+      let newBalance = balance;
+      let updatedTransactions = transactions;
+      if (target.isPaid) {
+        const relatedTx = [...transactions]
+          .reverse()
+          .find(
+            (t) =>
+              t.type === 'bill_payment' &&
+              (t.relatedBillId === billId || t.description?.includes(target.title))
+          );
+        if (relatedTx) {
+          newBalance = balance + relatedTx.amount;
+          updatedTransactions = transactions.filter((t) => t.id !== relatedTx.id);
+        }
+      }
 
       const updatedBills = await Promise.all(
         bills.map(async (b) => {
@@ -331,17 +381,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
               lastPaidAmount: undefined,
             };
             const notifId = await NotificationService.scheduleBillNotification(updated);
-            updated.notificationId = notifId;
+            updated.notificationId = notifId ?? undefined;
             return updated;
           }
           return b;
         })
       );
 
+      setBalance(newBalance);
+      setTransactions(updatedTransactions);
       setBills(updatedBills);
-      await StorageService.saveBills(updatedBills);
+
+      await Promise.all([
+        StorageService.saveBalance(newBalance),
+        StorageService.saveTransactions(updatedTransactions),
+        StorageService.saveBills(updatedBills),
+      ]);
     },
-    [bills]
+    [balance, bills, transactions]
   );
 
   // Edit Bill
@@ -385,7 +442,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     [bills]
   );
 
-  // Receive Salary
+  // Receive Salary — guards against double-credit in same month, then re-schedules next notification
   const receiveSalary = useCallback(
     async (customAmount?: number) => {
       const amountToAdd = Math.abs(customAmount ?? salaryConfig.amount);
@@ -395,6 +452,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       const monthYearStr = `${now.getFullYear()}-${String(
         now.getMonth() + 1
       ).padStart(2, '0')}`;
+
+      // Guard: do not allow double-credit in the same calendar month
+      if (salaryConfig.lastCreditedMonthYear === monthYearStr) return;
 
       const newTx: WalletTransaction = {
         id: `tx-salary-${Date.now()}`,
@@ -407,9 +467,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const newBalance = balance + amountToAdd;
       const newTransactions = [newTx, ...transactions];
+
+      // Cancel current salary notification and schedule next month's
+      if (salaryConfig.notificationId) {
+        await NotificationService.cancelNotification(salaryConfig.notificationId);
+      }
+      const nextNotifId = await NotificationService.scheduleSalaryNotification(
+        salaryConfig.amount,
+        salaryConfig.dayOfMonth
+      );
+
       const updatedSalaryConfig: SalaryConfig = {
         ...salaryConfig,
         lastCreditedMonthYear: monthYearStr,
+        notificationId: nextNotifId ?? undefined,
       };
 
       setBalance(newBalance);
@@ -558,6 +629,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   // Settle Friend Entry (Partial or Full)
+  // Recalculates friend's totalLent, totalBorrowed, netBalance from ground truth after settlement.
   const settleFriendEntry = useCallback(
     async (
       entryId: string,
@@ -568,7 +640,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
       const entry = friendEntries.find((e) => e.id === entryId);
       if (!entry || entry.isSettled) return;
 
-      const targetFriend = friends.find((f) => f.id === entry.friendId);
       const cleanAmount = isFull
         ? entry.remainingAmount
         : Math.min(Math.abs(settleAmount), entry.remainingAmount);
@@ -597,10 +668,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         txDesc = isNowSettled
           ? `Settled in full by ${entry.friendName} (+${cleanAmount})`
           : `Partial payment from ${entry.friendName} (+${cleanAmount})`;
-
-        if (targetFriend) {
-          targetFriend.netBalance -= cleanAmount;
-        }
       } else {
         // I was owing friend money -> I pay friend back -> cash leaves my wallet!
         newBalance = balance - cleanAmount;
@@ -608,10 +675,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         txDesc = isNowSettled
           ? `Repaid debt in full to ${entry.friendName} (-${cleanAmount})`
           : `Partial debt repayment to ${entry.friendName} (-${cleanAmount})`;
-
-        if (targetFriend) {
-          targetFriend.netBalance += cleanAmount;
-        }
       }
 
       // Update entry
@@ -628,10 +691,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         return e;
       });
 
-      // Update friends list
-      const updatedFriends = friends.map((f) =>
-        targetFriend && f.id === targetFriend.id ? { ...targetFriend } : f
-      );
+      // Recompute friend totals from ground truth (same pattern as deleteFriendEntry)
+      const updatedFriends = friends.map((f) => {
+        if (f.id === entry.friendId) {
+          const fEntries = updatedEntries.filter((e) => e.friendId === f.id);
+          const totalLent = fEntries
+            .filter((e) => e.type === 'lent')
+            .reduce((sum, e) => sum + e.amount, 0);
+          const totalBorrowed = fEntries
+            .filter((e) => e.type === 'borrowed')
+            .reduce((sum, e) => sum + e.amount, 0);
+          const netBalance = fEntries.reduce((acc, e) => {
+            if (e.isSettled) return acc;
+            return e.type === 'lent' ? acc + e.remainingAmount : acc - e.remainingAmount;
+          }, 0);
+          return { ...f, totalLent, totalBorrowed, netBalance };
+        }
+        return f;
+      });
 
       // Create transaction
       const newTx: WalletTransaction = {
@@ -670,6 +747,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   // Delete Friend Entry (Rolls back wallet balance & linked transaction)
+  // Uses strict relatedFriendEntryId lookup to avoid reversing the wrong transaction.
   const deleteFriendEntry = useCallback(
     async (entryId: string) => {
       const targetEntry = friendEntries.find((e) => e.id === entryId);
@@ -679,14 +757,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         await NotificationService.cancelNotification(targetEntry.notificationId);
       }
 
-      // Check for associated transaction in transactions
-      const relatedTx = transactions.find(
-        (t) =>
-          t.relatedFriendEntryId === entryId ||
-          (t.relatedFriendId === targetEntry.friendId &&
+      // Strict lookup by entry ID first; only fall back to loose match if no direct link exists
+      const relatedTx =
+        transactions.find((t) => t.relatedFriendEntryId === entryId) ??
+        transactions.find(
+          (t) =>
+            t.relatedFriendId === targetEntry.friendId &&
             t.amount === targetEntry.amount &&
-            t.type === (targetEntry.type === 'lent' ? 'friend_lent' : 'friend_borrowed'))
-      );
+            t.type === (targetEntry.type === 'lent' ? 'friend_lent' : 'friend_borrowed') &&
+            !transactions.some(
+              (other) => other.relatedFriendEntryId === t.relatedFriendEntryId && other.id !== t.id
+            )
+        );
 
       let newBalance = balance;
       let updatedTransactions = transactions;
@@ -912,8 +994,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     [balance, transactions, friendEntries, friends, bills]
   );
 
-  // Reset all to sample defaults
+  // Reset all to clean defaults — also cancels all notifications and re-locks the app
   const resetAllData = useCallback(async () => {
+    // Cancel every scheduled notification before wiping data
+    await NotificationService.cancelAllNotifications();
+
     const data = await StorageService.resetToDefaults();
     setBalance(data.balance);
     setTransactions(data.transactions);
@@ -923,7 +1008,61 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
     setFriendEntries(data.friendEntries);
     setUserProfile(data.userProfile);
     setSecuritySettings(data.securitySettings);
+    // Re-lock the app since PIN/biometrics have been cleared
+    setIsUnlocked(true); // No lock is set after reset, so keep it accessible
   }, []);
+
+  // Delete a friend record and all associated entries, with full balance rollback
+  const deleteFriend = useCallback(
+    async (friendId: string) => {
+      const friendToDelete = friends.find((f) => f.id === friendId);
+      if (!friendToDelete) return;
+
+      // Cancel all notifications for this friend's entries
+      const friendEntriesForFriend = friendEntries.filter((e) => e.friendId === friendId);
+      await Promise.all(
+        friendEntriesForFriend
+          .filter((e) => e.notificationId)
+          .map((e) => NotificationService.cancelNotification(e.notificationId))
+      );
+
+      // Reverse all unsettled balance impacts
+      let balanceAdjustment = 0;
+      friendEntriesForFriend.forEach((e) => {
+        if (!e.isSettled) {
+          // lent = money left wallet (refund), borrowed = money entered wallet (remove)
+          balanceAdjustment += e.type === 'lent' ? e.remainingAmount : -e.remainingAmount;
+        }
+      });
+
+      // Remove all linked transactions
+      const entryIds = new Set(friendEntriesForFriend.map((e) => e.id));
+      const updatedTransactions = transactions.filter(
+        (t) => t.relatedFriendId !== friendId || !entryIds.has(t.relatedFriendEntryId ?? '')
+      );
+      // Remove friend_lent / friend_borrowed for these entries
+      const strictUpdatedTransactions = updatedTransactions.filter(
+        (t) => !(t.relatedFriendId === friendId && (t.type === 'friend_lent' || t.type === 'friend_borrowed' || t.type === 'friend_settlement'))
+      );
+
+      const newBalance = balance + balanceAdjustment;
+      const updatedEntries = friendEntries.filter((e) => e.friendId !== friendId);
+      const updatedFriends = friends.filter((f) => f.id !== friendId);
+
+      setBalance(newBalance);
+      setTransactions(strictUpdatedTransactions);
+      setFriendEntries(updatedEntries);
+      setFriends(updatedFriends);
+
+      await Promise.all([
+        StorageService.saveBalance(newBalance),
+        StorageService.saveTransactions(strictUpdatedTransactions),
+        StorageService.saveFriendEntries(updatedEntries),
+        StorageService.saveFriends(updatedFriends),
+      ]);
+    },
+    [balance, friendEntries, friends, transactions]
+  );
 
   // Update User Profile
   const updateUserProfile = useCallback(
@@ -1126,6 +1265,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
         addFriendEntry,
         settleFriendEntry,
         deleteFriendEntry,
+        deleteFriend,
         deleteTransaction,
         resetAllData,
       }}

@@ -32,12 +32,13 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
   onClose,
 }) => {
   const insets = useSafeAreaInsets();
-  const { friendEntries, settleFriendEntry, addFriendEntry, deleteFriendEntry } = useWallet();
+  const { friendEntries, settleFriendEntry, addFriendEntry, deleteFriendEntry, deleteFriend } = useWallet();
 
   const [amountStr, setAmountStr] = useState('');
   const [noteStr, setNoteStr] = useState('');
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [showDeleteFriendConfirm, setShowDeleteFriendConfirm] = useState(false);
 
   if (!friend) return null;
 
@@ -175,11 +176,12 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
           </View>
 
           <TouchableOpacity
-            style={styles.headerIconButton}
-            onPress={onClose}
+            style={[styles.headerIconButton, { backgroundColor: colors.negSoft }]}
+            onPress={() => setShowDeleteFriendConfirm(true)}
             activeOpacity={0.7}
+            accessibilityLabel="Delete friend"
           >
-            <MaterialIcons name="close" size={20} color={colors.ink} />
+            <MaterialIcons name="person-remove" size={20} color={colors.neg} />
           </TouchableOpacity>
         </View>
 
@@ -485,6 +487,23 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
           icon="delete-outline"
           onConfirm={confirmDeleteEntry}
           onCancel={() => setDeletingEntryId(null)}
+        />
+
+        {/* Remove Friend Confirmation */}
+        <ConfirmModal
+          visible={showDeleteFriendConfirm}
+          title={`Remove ${firstName}?`}
+          message={`This will permanently delete ${friend.name} and all their ledger entries. Unsettled balances will be reversed from your Central Wallet. This cannot be undone.`}
+          confirmText="Remove Friend"
+          cancelText="Cancel"
+          type="danger"
+          icon="person-remove"
+          onConfirm={async () => {
+            setShowDeleteFriendConfirm(false);
+            await deleteFriend(friend.id);
+            onClose();
+          }}
+          onCancel={() => setShowDeleteFriendConfirm(false)}
         />
       </View>
     </Modal>

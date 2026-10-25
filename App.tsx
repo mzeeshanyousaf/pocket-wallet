@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  AppState,
   Image,
   Modal,
   Platform,
@@ -254,9 +255,10 @@ function WelcomeSplashScreen({ onFinish }: { onFinish: () => void }) {
 }
 
 function AppContent() {
-  const { isLoaded, isUnlocked, unlockApp, securitySettings } = useWallet();
+  const { isLoaded, isUnlocked, unlockApp, lockApp, securitySettings } = useWallet();
   const [showWelcomeSplash, setShowWelcomeSplash] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
+  const appStateRef = useRef<string>('active');
 
   useEffect(() => {
     (async () => {
@@ -264,6 +266,27 @@ function AppContent() {
       setIsOnboarded(onboarded);
     })();
   }, []);
+
+  // Lock the app when it goes to background (if lock is enabled)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const isLockEnabled =
+        (securitySettings.isPinEnabled && !!securitySettings.pin) ||
+        securitySettings.biometricsEnabled;
+
+      if (isLockEnabled) {
+        if (
+          appStateRef.current === 'active' &&
+          (nextState === 'background' || nextState === 'inactive')
+        ) {
+          lockApp();
+        }
+      }
+      appStateRef.current = nextState;
+    });
+
+    return () => subscription.remove();
+  }, [securitySettings, lockApp]);
 
   const handleCompleteOnboarding = async () => {
     await StorageService.setOnboarded();

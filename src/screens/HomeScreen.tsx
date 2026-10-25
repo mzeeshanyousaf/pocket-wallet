@@ -120,7 +120,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     month: 'long',
   });
 
-  const firstName = userProfile.name ? userProfile.name.split(' ')[0] : 'Ali';
+  const firstName = userProfile.name ? userProfile.name.split(' ')[0] : 'there';
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

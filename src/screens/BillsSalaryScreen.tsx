@@ -37,7 +37,7 @@ export const BillsSalaryScreen: React.FC = () => {
     const tot = bills.reduce((sum, b) => sum + b.estimatedAmount, 0);
     const pd = bills
       .filter((b) => b.isPaid)
-      .reduce((sum, b) => sum + b.estimatedAmount, 0);
+      .reduce((sum, b) => sum + (b.lastPaidAmount ?? b.estimatedAmount), 0);
     const rem = Math.max(0, tot - pd);
     const pct = tot > 0 ? Math.min(100, Math.round((pd / tot) * 100)) : 0;
     return { total: tot, paid: pd, remaining: rem, percentPaid: pct };
