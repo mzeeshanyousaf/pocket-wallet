@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Pocket Wallet",
+    "slug": "pocket-wallet",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pocketwallet.app"
+    },
+    "android": {
+      "package": "com.pocketwallet.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F19",
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/monochrome-icon.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0B0F19",
+          "dark": {
+            "image": "./assets/splash.png",
+            "backgroundColor": "#0B0F19"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2dfc7357-6fe2-469c-8cbb-301fbe4ba511"
+      }
+    },
+    "owner": "mrzed"
+  }
+}
