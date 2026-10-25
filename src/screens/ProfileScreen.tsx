@@ -1,5 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import * as LocalAuthentication from 'expo-local-authentication';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -42,6 +43,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const [phone, setPhone] = useState(userProfile.phone || '');
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  // Biometrics hardware detection state
+  const [hasBiometrics, setHasBiometrics] = useState(false);
+  const [biometricName, setBiometricName] = useState<'Fingerprint' | 'Face ID'>('Fingerprint');
+
   // PIN Setup Modal state
   const [showPinModal, setShowPinModal] = useState(false);
   const [newPin, setNewPin] = useState('');
@@ -62,6 +67,26 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
     title: '',
     message: '',
   });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const hasHw = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        if (hasHw && isEnrolled) {
+          setHasBiometrics(true);
+          const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+          if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+            setBiometricName('Face ID');
+          } else {
+            setBiometricName('Fingerprint');
+          }
+        }
+      } catch (err) {
+        console.log('Biometrics check error:', err);
+      }
+    })();
+  }, []);
 
   const handleSaveProfile = async () => {
     setProfileError(null);
@@ -96,6 +121,44 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       setShowPinModal(true);
     } else {
       setShowDisablePinConfirm(true);
+    }
+  };
+
+  const handleToggleBiometrics = async (val: boolean) => {
+    if (val) {
+      if (!securitySettings.isPinEnabled || !securitySettings.pin) {
+        setAlertInfo({
+          visible: true,
+          title: 'Set PIN First',
+          message: 'Please set up a 4-digit PIN first so you always have a passcode fallback if fingerprint fails.',
+          icon: 'lock',
+          type: 'warning',
+        });
+        return;
+      }
+
+      try {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: `Verify ${biometricName} to enable unlock`,
+          cancelLabel: 'Cancel',
+          disableDeviceFallback: true,
+        });
+
+        if (result.success) {
+          await updateSecuritySettings({ biometricsEnabled: true });
+          setAlertInfo({
+            visible: true,
+            title: `${biometricName} Enabled`,
+            message: `Pocket Wallet can now be unlocked using ${biometricName} or your 4-digit PIN.`,
+            icon: biometricName === 'Face ID' ? 'face' : 'fingerprint',
+            type: 'info',
+          });
+        }
+      } catch (err) {
+        console.log('Biometric verification error:', err);
+      }
+    } else {
+      await updateSecuritySettings({ biometricsEnabled: false });
     }
   };
 
@@ -301,6 +364,38 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               </TouchableOpacity>
             </>
           )}
+
+          <View style={styles.separator} />
+
+          {/* Biometrics / Fingerprint Toggle */}
+          <View style={styles.settingToggleRow}>
+            <View style={styles.settingIconBox}>
+              <MaterialIcons
+                name={biometricName === 'Face ID' ? 'face' : 'fingerprint'}
+                size={20}
+                color={colors.ink}
+              />
+            </View>
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.settingTitle}>{biometricName} unlock</Text>
+              <Text style={styles.settingSubtitle}>
+                {!hasBiometrics
+                  ? 'No biometric sensor detected'
+                  : !securitySettings.isPinEnabled || !securitySettings.pin
+                  ? 'Set 4-digit PIN first to activate'
+                  : securitySettings.biometricsEnabled
+                  ? `Active · Unlock with ${biometricName} or PIN`
+                  : `Disabled · Unlock with PIN only`}
+              </Text>
+            </View>
+            <Switch
+              value={securitySettings.biometricsEnabled && !!securitySettings.pin}
+              onValueChange={handleToggleBiometrics}
+              disabled={!hasBiometrics}
+              trackColor={{ false: colors.line, true: colors.brand }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
         </View>
 
         {/* Section: Data & Backup */}
@@ -433,8 +528,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       <ConfirmModal
         visible={showDisablePinConfirm}
         title="Disable App Lock"
-        message="Are you sure you want to remove your 4-digit PIN security lock?"
-        confirmText="Disable PIN"
+        message={
+          securitySettings.biometricsEnabled
+            ? `Are you sure you want to remove your 4-digit PIN security lock? This will also disable ${biometricName} unlock.`
+            : 'Are you sure you want to remove your 4-digit PIN security lock?'
+        }
+        confirmText="Disable Lock"
         cancelText="Cancel"
         type="warning"
         icon="lock-open"
@@ -443,6 +542,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           await updateSecuritySettings({
             isPinEnabled: false,
             pin: null,
+            biometricsEnabled: false,
           });
         }}
         onCancel={() => setShowDisablePinConfirm(false)}

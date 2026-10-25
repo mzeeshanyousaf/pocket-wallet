@@ -25,6 +25,12 @@
     "plugins": [
       "expo-notifications",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow $(PRODUCT_NAME) to use biometric authentication for secure unlock."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",

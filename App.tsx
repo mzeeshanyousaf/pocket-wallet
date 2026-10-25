@@ -302,8 +302,9 @@ function AppContent() {
     );
   }
 
-  // 4. PIN Lock Screen (if PIN is enabled and app is locked)
-  if (securitySettings.isPinEnabled && securitySettings.pin && !isUnlocked) {
+  // 4. PIN / Biometric Lock Screen (if lock is enabled and app is locked)
+  const isLockEnabled = (securitySettings.isPinEnabled && !!securitySettings.pin) || securitySettings.biometricsEnabled;
+  if (isLockEnabled && !isUnlocked) {
     return (
       <View style={styles.appContainer}>
         <StatusBar style="dark" />

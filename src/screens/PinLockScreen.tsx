@@ -1,5 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import * as LocalAuthentication from 'expo-local-authentication';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Animated,
   Image,
@@ -24,6 +25,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
   const [enteredPin, setEnteredPin] = useState('');
   const [errorShake] = useState(new Animated.Value(0));
   const [errorMessage, setErrorMessage] = useState('');
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [biometricTypeLabel, setBiometricTypeLabel] = useState<'Fingerprint' | 'Face ID'>('Fingerprint');
 
   const triggerShake = () => {
     if (Platform.OS !== 'web') {
@@ -41,6 +44,56 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
       Animated.timing(errorShake, { toValue: 0, duration: 50, useNativeDriver: true }),
     ]).start();
   };
+
+  const triggerBiometricAuth = useCallback(async () => {
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Unlock Pocket Wallet',
+        cancelLabel: 'Use PIN',
+        disableDeviceFallback: true,
+      });
+
+      if (result.success) {
+        onSuccess();
+      }
+    } catch (err) {
+      console.log('Biometric auth error:', err);
+    }
+  }, [onSuccess]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const hasHardware = await LocalAuthentication.hasHardwareAsync();
+        const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+        if (isMounted && hasHardware && isEnrolled) {
+          setBiometricsAvailable(true);
+          const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+          if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+            setBiometricTypeLabel('Face ID');
+          } else {
+            setBiometricTypeLabel('Fingerprint');
+          }
+
+          // Automatically prompt for fingerprint if user enabled biometrics
+          if (securitySettings.biometricsEnabled) {
+            setTimeout(() => {
+              if (isMounted) {
+                triggerBiometricAuth();
+              }
+            }, 350);
+          }
+        }
+      } catch (e) {
+        console.log('Biometric detection note:', e);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [securitySettings.biometricsEnabled, triggerBiometricAuth]);
 
   const handleKeyPress = (num: string) => {
     if (enteredPin.length >= 4) return;
@@ -68,6 +121,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
     }
   };
 
+  const showBiometrics = biometricsAvailable && securitySettings.biometricsEnabled;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
       {/* Brand Header */}
@@ -79,7 +134,11 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
         />
         <Text style={styles.welcomeText}>Welcome back,</Text>
         <Text style={styles.userName}>{userProfile.name || 'Pocket Wallet'}</Text>
-        <Text style={styles.instruction}>Enter your 4-digit PIN to unlock</Text>
+        <Text style={styles.instruction}>
+          {showBiometrics
+            ? `Use ${biometricTypeLabel} or enter 4-digit PIN`
+            : 'Enter your 4-digit PIN to unlock'}
+        </Text>
       </View>
 
       {/* PIN Dots Display */}
@@ -149,7 +208,22 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
           ))}
         </View>
         <View style={styles.keypadRow}>
-          <View style={styles.emptyKey} />
+          {showBiometrics ? (
+            <TouchableOpacity
+              style={[styles.key, styles.bioKey]}
+              onPress={triggerBiometricAuth}
+              activeOpacity={0.6}
+              accessibilityLabel={`Unlock with ${biometricTypeLabel}`}
+            >
+              <MaterialIcons
+                name={biometricTypeLabel === 'Face ID' ? 'face' : 'fingerprint'}
+                size={30}
+                color={colors.brand}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.emptyKey} />
+          )}
           <TouchableOpacity
             style={styles.key}
             onPress={() => handleKeyPress('0')}
@@ -265,6 +339,9 @@ const styles = StyleSheet.create({
   emptyKey: {
     width: 68,
     height: 68,
+  },
+  bioKey: {
+    backgroundColor: colors.brandSoft,
   },
   footerNote: {
     flexDirection: 'row',
