@@ -9,7 +9,6 @@ import {
   WalletState,
   WalletTransaction,
 } from '../types';
-import { toDateString } from '../utils/formatters';
 
 const STORAGE_KEYS = {
   BALANCE: '@pocket_wallet_balance',

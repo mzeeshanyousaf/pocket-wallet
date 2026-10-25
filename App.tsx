@@ -8,6 +8,7 @@ import {
   Image,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -71,7 +72,7 @@ function MainTabs({ navigation }: { navigation?: any }) {
           flexDirection: 'row',
           justifyContent: 'space-around',
         },
-        tabBarActiveTintColor: colors.ink,
+        tabBarActiveTintColor: colors.brand,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: {
           fontSize: 11,
@@ -85,6 +86,33 @@ function MainTabs({ navigation }: { navigation?: any }) {
           alignItems: 'center',
           justifyContent: 'center',
           paddingVertical: 2,
+        },
+        tabBarButton: (props) => {
+          const { children, style, onPress, onLongPress, accessibilityState, accessibilityLabel, testID } = props;
+          return (
+            <Pressable
+              onPress={onPress}
+              onLongPress={onLongPress}
+              accessibilityState={accessibilityState}
+              accessibilityLabel={accessibilityLabel}
+              testID={testID}
+              android_ripple={{
+                color: colors.brandSoft,
+                borderless: true,
+                radius: 30,
+              }}
+              style={({ pressed }) => [
+                style,
+                {
+                  opacity: pressed ? 0.75 : 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+              ]}
+            >
+              {children}
+            </Pressable>
+          );
         },
         tabBarIconStyle: {
           alignItems: 'center',
@@ -197,11 +225,19 @@ function WelcomeSplashScreen({ onFinish }: { onFinish: () => void }) {
     >
       <Animated.View style={[styles.welcomeModalOverlay, { opacity: fadeAnim }]}>
         <StatusBar style="light" />
-        <Image
-          source={require('./assets/splash.png')}
-          style={styles.welcomeSplashImage}
-          resizeMode="cover"
-        />
+        <View style={styles.splashBrandContainer}>
+          <Image
+            source={require('./assets/logos/logo_mark_symbol_1024x1024.png')}
+            style={styles.splashMarkSymbol}
+            resizeMode="contain"
+          />
+          <Image
+            source={require('./assets/logos/logo_horizontal_dark_mode.png')}
+            style={styles.splashHorizontalLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.splashTagline}>Smart Cashflow & Giving Ledger</Text>
+        </View>
         <TouchableOpacity
           style={styles.skipWelcomeBtn}
           onPress={handleSkip}
@@ -368,13 +404,30 @@ const styles = StyleSheet.create({
   },
   welcomeModalOverlay: {
     flex: 1,
-    backgroundColor: '#070A0F',
+    backgroundColor: '#0B0F19',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  welcomeSplashImage: {
-    width: '100%',
-    height: '100%',
+  splashBrandContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  splashMarkSymbol: {
+    width: 96,
+    height: 96,
+    marginBottom: 16,
+  },
+  splashHorizontalLogo: {
+    width: 220,
+    height: 56,
+    marginBottom: 8,
+  },
+  splashTagline: {
+    fontSize: 13,
+    color: '#8E9AA6',
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
   skipWelcomeBtn: {
     position: 'absolute',
