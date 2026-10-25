@@ -58,18 +58,15 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
         <View style={styles.card}>
           <View style={styles.brandRow}>
             <Image
-              source={require('../../assets/logos/logo_mark_symbol_1024x1024.png')}
-              style={styles.brandSymbol}
+              source={require('../../assets/logos/logo_horizontal_light_mode.png')}
+              style={styles.brandHorizontalLogo}
               resizeMode="contain"
             />
-            <View style={styles.brandTextContainer}>
-              <Text style={styles.appName}>Pocket Wallet</Text>
-              <Text style={styles.tagline}>Smart Cashflow & Giving Ledger</Text>
-              <View style={styles.versionPill}>
-                <Text style={styles.versionPillText}>v1.0.0 · Production Ready</Text>
-              </View>
+            <View style={styles.versionPill}>
+              <Text style={styles.versionPillText}>v1.0.0</Text>
             </View>
           </View>
+          <Text style={styles.tagline}>Smart Cashflow & Giving Ledger</Text>
           <Text style={styles.descriptionParagraph}>
             Pocket Wallet is an offline-first financial companion built exclusively for the Pakistani rupee (PKR) ecosystem. It combines salary paycheck cycles, recurring household bills, and a dedicated Give &amp; Take friends ledger into a single central wallet.
           </Text>
@@ -168,7 +165,7 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
           activeOpacity={0.7}
         >
           <Text style={styles.footerCopyright}>Made with love by Zeeshan</Text>
-          <Text style={styles.footerBuiltFor}>Crafted for Pakistan · 2026</Text>
+          <Text style={styles.footerBuiltFor}>Crafted for ZED · 2026</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -220,27 +217,18 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  brandSymbol: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    marginRight: 14,
-  },
-  brandTextContainer: {
-    flex: 1,
-  },
-  appName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.ink,
-    letterSpacing: -0.2,
+  brandHorizontalLogo: {
+    width: 175,
+    height: 45,
   },
   tagline: {
     fontSize: 12.5,
+    fontWeight: '500',
     color: colors.muted,
-    marginTop: 2,
+    marginBottom: 8,
   },
   versionPill: {
     alignSelf: 'flex-start',

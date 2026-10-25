@@ -130,7 +130,7 @@ export const StorageService = {
       };
     } catch (error) {
       console.error('Error loading wallet state from AsyncStorage:', error);
-      return getInitialSeedData();
+      return getCleanInitialState();
     }
   },
 

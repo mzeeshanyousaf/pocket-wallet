@@ -112,7 +112,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const handleResetData = () => {
     Alert.alert(
       'Wipe All Data',
-      'This will wipe all your transactions, recurring bills, and friends ledger, resetting your wallet to clean defaults. Your profile info and PIN will be preserved. Continue?',
+      'This will completely wipe all transactions, bills, friends ledger entries, and reset wallet balance to 0. Continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -120,6 +120,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             await resetAllData();
+            setName('John Doe');
+            setEmail('john.doe@example.com');
+            setPhone('');
             Alert.alert('Done', 'All wallet data has been wiped.');
           },
         },
@@ -315,7 +318,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {/* Footer Brand Logo & Version */}
         <View style={styles.footerContainer}>
           <Image
-            source={require('../../assets/logos/logo_horizontal_dark_mode.png')}
+            source={require('../../assets/logos/logo_horizontal_light_mode.png')}
             style={styles.footerLogo}
             resizeMode="contain"
           />

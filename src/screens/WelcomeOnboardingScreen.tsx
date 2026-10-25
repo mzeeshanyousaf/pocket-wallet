@@ -105,7 +105,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
               resizeMode="contain"
             />
             <Image
-              source={require('../../assets/logos/logo_horizontal_dark_mode.png')}
+              source={require('../../assets/logos/logo_horizontal_light_mode.png')}
               style={styles.logoHorizontal}
               resizeMode="contain"
             />
@@ -133,7 +133,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
                 <Text style={styles.inputLabel}>Full Name</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. Ali Raza"
+                  placeholder="e.g. John Doe"
                   placeholderTextColor={colors.subtle}
                   value={name}
                   onChangeText={(t) => {
@@ -276,13 +276,13 @@ const styles = StyleSheet.create({
     marginVertical: 18,
   },
   logoMark: {
-    width: 68,
-    height: 68,
-    marginBottom: 8,
+    width: 72,
+    height: 72,
+    marginBottom: 10,
   },
   logoHorizontal: {
-    width: 170,
-    height: 34,
+    width: 195,
+    height: 50,
   },
   stepCard: {
     width: '100%',
