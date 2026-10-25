@@ -1,9 +1,10 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
-import { Alert, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { radius, spacing } from '../theme/tokens';
+import { ConfirmModal } from './ConfirmModal';
 
 interface HeaderProps {
   title?: string;
@@ -15,23 +16,7 @@ export const Header: React.FC<HeaderProps> = ({
   subtitle,
 }) => {
   const { resetAllData } = useWallet();
-
-  const handleReset = () => {
-    Alert.alert(
-      'Wipe All Data',
-      'This will wipe all your transactions, bills, and friends ledger to clean defaults. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Wipe All Data',
-          style: 'destructive',
-          onPress: async () => {
-            await resetAllData();
-          },
-        },
-      ]
-    );
-  };
+  const [showConfirm, setShowConfirm] = useState(false);
 
   return (
     <View style={styles.container}>
@@ -59,13 +44,28 @@ export const Header: React.FC<HeaderProps> = ({
         </View>
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={handleReset}
+          onPress={() => setShowConfirm(true)}
           accessibilityLabel="Wipe all data"
           activeOpacity={0.7}
         >
           <MaterialIcons name="refresh" size={16} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
+
+      <ConfirmModal
+        visible={showConfirm}
+        title="Wipe All Data"
+        message="This will completely wipe all your transactions, bills, and friends ledger to clean defaults. Continue?"
+        confirmText="Wipe All Data"
+        cancelText="Cancel"
+        type="danger"
+        icon="delete-sweep"
+        onConfirm={async () => {
+          setShowConfirm(false);
+          await resetAllData();
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
     </View>
   );
 };

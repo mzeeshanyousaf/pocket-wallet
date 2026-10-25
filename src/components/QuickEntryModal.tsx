@@ -102,13 +102,14 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       animationType="slide"
       onRequestClose={onClose}
       onShow={handleShow}
+      statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.keyboardView}
-          >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidRoot}
+      >
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.backdrop}>
             <TouchableWithoutFeedback>
               <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
                 {/* Drag handle */}
@@ -129,6 +130,8 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.scrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
                 >
                   {/* Segmented Type Switcher */}
                   <View style={styles.segmentedRow}>
@@ -275,21 +278,21 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 </ScrollView>
               </View>
             </TouchableWithoutFeedback>
-          </KeyboardAvoidingView>
-        </View>
-      </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardAvoidRoot: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
-  },
-  keyboardView: {
-    width: '100%',
   },
   sheetContainer: {
     backgroundColor: colors.surface,

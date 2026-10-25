@@ -1,9 +1,10 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { WalletTransaction } from '../types';
 import { formatRs, formatTimeDisplay } from '../utils/formatters';
+import { ConfirmModal } from './ConfirmModal';
 
 interface TransactionItemProps {
   transaction: WalletTransaction;
@@ -16,6 +17,8 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
   onDelete,
   balanceHidden = false,
 }) => {
+  const [showConfirm, setShowConfirm] = useState(false);
+
   const isIn =
     transaction.type === 'income' ||
     transaction.type === 'salary' ||
@@ -49,18 +52,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
       : 'Expense');
 
   const handleDelete = () => {
-    Alert.alert(
-      'Delete Entry?',
-      `Remove "${transaction.description}" of ${formatRs(transaction.amount)}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => onDelete(transaction.id),
-        },
-      ]
-    );
+    setShowConfirm(true);
   };
 
   return (
@@ -111,6 +103,21 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
       >
         <MaterialIcons name="close" size={15} color={colors.subtle} />
       </TouchableOpacity>
+
+      <ConfirmModal
+        visible={showConfirm}
+        title="Delete Entry?"
+        message={`Remove "${transaction.description}" of ${formatRs(transaction.amount)}?`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+        icon="delete-outline"
+        onConfirm={() => {
+          setShowConfirm(false);
+          onDelete(transaction.id);
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
     </View>
   );
 };

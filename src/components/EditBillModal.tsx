@@ -1,7 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -19,6 +18,7 @@ import { colors } from '../theme/colors';
 import { radius } from '../theme/tokens';
 import { Bill, BillCategory, BillFrequency } from '../types';
 import { formatDateDisplay } from '../utils/formatters';
+import { ConfirmModal } from './ConfirmModal';
 import { DatePickerModal } from './DatePickerModal';
 
 interface EditBillModalProps {
@@ -58,6 +58,8 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   const [frequency, setFrequency] = useState<BillFrequency>('monthly');
   const [customDays, setCustomDays] = useState('6');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [errorText, setErrorText] = useState('');
 
   const handleShow = () => {
     if (bill) {
@@ -67,21 +69,23 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
       setDueDate(bill.dueDate);
       setFrequency(bill.frequency || 'monthly');
       setCustomDays(String(bill.frequencyDays || 6));
+      setErrorText('');
     }
   };
 
   const handleSave = async () => {
     if (!bill) return;
+    setErrorText('');
 
     const cleanTitle = title.trim();
     if (!cleanTitle) {
-      alert('Please enter a bill title.');
+      setErrorText('Please enter a bill title.');
       return;
     }
 
     const cleanAmount = parseFloat(amount.replace(/,/g, ''));
     if (isNaN(cleanAmount) || cleanAmount <= 0) {
-      alert('Please enter a valid amount.');
+      setErrorText('Please enter a valid amount.');
       return;
     }
 
@@ -98,22 +102,14 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   };
 
   const handleDelete = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
     if (!bill) return;
-    Alert.alert(
-      'Delete Bill',
-      `Are you sure you want to delete "${bill.title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteBill(bill.id);
-            onClose();
-          },
-        },
-      ]
-    );
+    setShowDeleteConfirm(false);
+    await deleteBill(bill.id);
+    onClose();
   };
 
   if (!bill) return null;
@@ -126,13 +122,14 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
         animationType="slide"
         onRequestClose={onClose}
         onShow={handleShow}
+        statusBarTranslucent
       >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={styles.backdrop}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={styles.keyboardView}
-            >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidRoot}
+        >
+          <TouchableWithoutFeedback onPress={onClose}>
+            <View style={styles.backdrop}>
               <TouchableWithoutFeedback>
                 <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
                   {/* Drag Handle */}
@@ -150,9 +147,18 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                     </TouchableOpacity>
                   </View>
 
+                  {errorText ? (
+                    <View style={styles.errorBox}>
+                      <MaterialIcons name="error-outline" size={16} color={colors.neg} />
+                      <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                  ) : null}
+
                   <ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
                   >
                     {/* Centered Large Amount Input */}
                     <View style={styles.amountSection}>
@@ -324,9 +330,9 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                   </ScrollView>
                 </View>
               </TouchableWithoutFeedback>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Date Picker Modal */}
@@ -337,18 +343,47 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
         onSelect={(date) => setDueDate(date)}
         onClose={() => setShowDatePicker(false)}
       />
+
+      {/* Branded Delete Confirmation Modal */}
+      <ConfirmModal
+        visible={showDeleteConfirm}
+        title="Delete Bill?"
+        message={`Are you sure you want to delete "${bill?.title}"? This cannot be undone.`}
+        confirmText="Delete Bill"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardAvoidRoot: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 20, 25, 0.55)',
     justifyContent: 'flex-end',
   },
-  keyboardView: {
-    width: '100%',
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.negSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 12.5,
+    color: colors.neg,
+    fontWeight: '600',
+    flex: 1,
   },
   sheetContainer: {
     backgroundColor: colors.surface,

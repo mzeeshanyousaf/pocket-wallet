@@ -32,17 +32,20 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
   const [amountStr, setAmountStr] = useState('');
   const [dayOfMonth, setDayOfMonth] = useState<number>(1);
   const [autoPrompt, setAutoPrompt] = useState<boolean>(true);
+  const [errorText, setErrorText] = useState('');
 
   const handleShow = () => {
-    setAmountStr(salaryConfig.amount > 0 ? salaryConfig.amount.toString() : '120000');
+    setAmountStr(salaryConfig.amount > 0 ? salaryConfig.amount.toString() : '');
     setDayOfMonth(salaryConfig.dayOfMonth || 1);
     setAutoPrompt(salaryConfig.autoPrompt !== false);
+    setErrorText('');
   };
 
   const handleSave = async () => {
+    setErrorText('');
     const numAmount = parseFloat(amountStr.replace(/,/g, ''));
     if (isNaN(numAmount) || numAmount <= 0) {
-      alert('Please enter a valid monthly salary amount in Rs.');
+      setErrorText('Please enter a valid monthly salary amount in Rs.');
       return;
     }
 
@@ -69,13 +72,14 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
       animationType="slide"
       onRequestClose={onClose}
       onShow={handleShow}
+      statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.keyboardView}
-          >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidRoot}
+      >
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.backdrop}>
             <TouchableWithoutFeedback>
               <View style={styles.sheetContainer}>
                 {/* Drag Handle */}
@@ -93,9 +97,18 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
+                {errorText ? (
+                  <View style={styles.errorBox}>
+                    <MaterialIcons name="error-outline" size={16} color={colors.neg} />
+                    <Text style={styles.errorText}>{errorText}</Text>
+                  </View>
+                ) : null}
+
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.scrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
                 >
                   {/* Centered Large Amount Input */}
                   <View style={styles.amountSection}>
@@ -195,21 +208,38 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                 </ScrollView>
               </View>
             </TouchableWithoutFeedback>
-          </KeyboardAvoidingView>
-        </View>
-      </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardAvoidRoot: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 20, 25, 0.55)',
     justifyContent: 'flex-end',
   },
-  keyboardView: {
-    width: '100%',
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.negSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 12.5,
+    color: colors.neg,
+    fontWeight: '600',
+    flex: 1,
   },
   sheetContainer: {
     backgroundColor: colors.surface,

@@ -35,19 +35,22 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
   const dynamicMaxHeight = Math.min(windowHeight * 0.9, 700);
 
   const [amountStr, setAmountStr] = useState('');
+  const [errorText, setErrorText] = useState('');
 
   const handleShow = () => {
     if (bill) {
       setAmountStr(bill.estimatedAmount.toString());
     }
+    setErrorText('');
   };
 
   const handleConfirmPay = async () => {
     if (!bill) return;
+    setErrorText('');
 
     const numAmount = parseFloat(amountStr.replace(/,/g, ''));
     if (isNaN(numAmount) || numAmount <= 0) {
-      alert('Please enter a valid payment amount.');
+      setErrorText('Please enter a valid payment amount.');
       return;
     }
 
@@ -67,13 +70,14 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
       animationType="slide"
       onRequestClose={onClose}
       onShow={handleShow}
+      statusBarTranslucent
     >
-      <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.keyboardView}
-          >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidRoot}
+      >
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={styles.backdrop}>
             <TouchableWithoutFeedback>
               <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
                 {/* Drag Handle */}
@@ -91,9 +95,18 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
                   </TouchableOpacity>
                 </View>
 
+                {errorText ? (
+                  <View style={styles.errorBox}>
+                    <MaterialIcons name="error-outline" size={16} color={colors.neg} />
+                    <Text style={styles.errorText}>{errorText}</Text>
+                  </View>
+                ) : null}
+
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.scrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
                 >
                   {/* Bill Card Summary */}
                   <View style={styles.billSummaryCard}>
@@ -172,21 +185,38 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
                 </ScrollView>
               </View>
             </TouchableWithoutFeedback>
-          </KeyboardAvoidingView>
-        </View>
-      </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
+  keyboardAvoidRoot: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 20, 25, 0.55)',
     justifyContent: 'flex-end',
   },
-  keyboardView: {
-    width: '100%',
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.negSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 12.5,
+    color: colors.neg,
+    fontWeight: '600',
+    flex: 1,
   },
   sheetContainer: {
     backgroundColor: colors.surface,

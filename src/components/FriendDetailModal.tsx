@@ -1,7 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,6 +17,7 @@ import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
 import { Friend } from '../types';
 import { formatDateDisplay, formatRs } from '../utils/formatters';
+import { ConfirmModal } from './ConfirmModal';
 
 interface FriendDetailModalProps {
   visible: boolean;
@@ -36,6 +36,8 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
 
   const [amountStr, setAmountStr] = useState('');
   const [noteStr, setNoteStr] = useState('');
+  const [showSettleConfirm, setShowSettleConfirm] = useState(false);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
 
   if (!friend) return null;
 
@@ -76,46 +78,32 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
           secondary: { label: 'Borrowed', type: 'borrowed' as const },
         };
 
-  const handleSettleInFull = async () => {
+  const handleSettleInFull = () => {
     if (pendingEntries.length === 0) return;
-    Alert.alert(
-      'Settle in Full?',
-      `Mark all pending entries with ${firstName} as settled in full?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm Settle',
-          style: 'default',
-          onPress: async () => {
-            for (const entry of pendingEntries) {
-              await settleFriendEntry(
-                entry.id,
-                entry.remainingAmount,
-                true,
-                'Settled in full'
-              );
-            }
-          },
-        },
-      ]
-    );
+    setShowSettleConfirm(true);
+  };
+
+  const confirmSettleInFull = async () => {
+    setShowSettleConfirm(false);
+    for (const entry of pendingEntries) {
+      await settleFriendEntry(
+        entry.id,
+        entry.remainingAmount,
+        true,
+        'Settled in full'
+      );
+    }
   };
 
   const handleDeleteEntry = (entryId: string) => {
-    Alert.alert(
-      'Delete Entry',
-      'This will delete this entry from the ledger and also reverse the transaction from your Central Wallet. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteFriendEntry(entryId);
-          },
-        },
-      ]
-    );
+    setDeletingEntryId(entryId);
+  };
+
+  const confirmDeleteEntry = async () => {
+    if (!deletingEntryId) return;
+    const id = deletingEntryId;
+    setDeletingEntryId(null);
+    await deleteFriendEntry(id);
   };
 
   const handleAction = async (actionType: 'repayment' | 'lent' | 'borrowed') => {
@@ -196,11 +184,12 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
         </View>
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
           <ScrollView
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={[
               styles.scrollContent,
               { paddingBottom: Math.max(insets.bottom + 24, 40) },
@@ -471,6 +460,32 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
             )}
           </ScrollView>
         </KeyboardAvoidingView>
+
+        {/* Settle in Full Confirmation */}
+        <ConfirmModal
+          visible={showSettleConfirm}
+          title="Settle in Full?"
+          message={`Mark all pending entries with ${firstName} as completely settled?`}
+          confirmText="Confirm Settle"
+          cancelText="Cancel"
+          type="info"
+          icon="check-circle"
+          onConfirm={confirmSettleInFull}
+          onCancel={() => setShowSettleConfirm(false)}
+        />
+
+        {/* Delete Entry Confirmation */}
+        <ConfirmModal
+          visible={deletingEntryId !== null}
+          title="Delete Entry"
+          message="This will delete this entry from the ledger and reverse the transaction from your Central Wallet. Continue?"
+          confirmText="Delete"
+          cancelText="Cancel"
+          type="danger"
+          icon="delete-outline"
+          onConfirm={confirmDeleteEntry}
+          onCancel={() => setDeletingEntryId(null)}
+        />
       </View>
     </Modal>
   );

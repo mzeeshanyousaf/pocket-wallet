@@ -89,6 +89,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const [frequency, setFrequency] = useState<BillFrequency>('monthly');
   const [customDays, setCustomDays] = useState('6');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [errorText, setErrorText] = useState('');
 
   const handleShow = () => {
     setTitle('Electricity (WAPDA / K-Electric)');
@@ -97,6 +98,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     setDueDate(toDateString(new Date(Date.now() + 86400000 * 5)));
     setFrequency('monthly');
     setCustomDays('6');
+    setErrorText('');
   };
 
   const handleCategorySelect = (preset: typeof presetCategories[0]) => {
@@ -104,18 +106,20 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     if (!title || presetCategories.some((p) => p.defaultTitle === title)) {
       setTitle(preset.defaultTitle);
     }
+    if (errorText) setErrorText('');
   };
 
   const handleSave = async () => {
+    setErrorText('');
     const cleanTitle = title.trim();
     if (!cleanTitle) {
-      alert('Please enter a bill title or provider.');
+      setErrorText('Please enter a bill title or provider.');
       return;
     }
 
     const cleanAmount = parseFloat(amount.replace(/,/g, ''));
     if (isNaN(cleanAmount) || cleanAmount <= 0) {
-      alert('Please enter an estimated bill amount in Rs.');
+      setErrorText('Please enter an estimated bill amount in Rs.');
       return;
     }
 
@@ -138,13 +142,14 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
         animationType="slide"
         onRequestClose={onClose}
         onShow={handleShow}
+        statusBarTranslucent
       >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={styles.backdrop}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={styles.keyboardView}
-            >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidRoot}
+        >
+          <TouchableWithoutFeedback onPress={onClose}>
+            <View style={styles.backdrop}>
               <TouchableWithoutFeedback>
                 <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
                   {/* Drag Handle */}
@@ -162,9 +167,18 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     </TouchableOpacity>
                   </View>
 
+                  {errorText ? (
+                    <View style={styles.errorBox}>
+                      <MaterialIcons name="error-outline" size={16} color={colors.neg} />
+                      <Text style={styles.errorText}>{errorText}</Text>
+                    </View>
+                  ) : null}
+
                   <ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
                   >
                     {/* Centered Large Amount Input */}
                     <View style={styles.amountSection}>
@@ -328,9 +342,9 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                   </ScrollView>
                 </View>
               </TouchableWithoutFeedback>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Date Picker Modal */}
@@ -346,13 +360,30 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
 };
 
 const styles = StyleSheet.create({
+  keyboardAvoidRoot: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 20, 25, 0.55)',
     justifyContent: 'flex-end',
   },
-  keyboardView: {
-    width: '100%',
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.negSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 8,
+  },
+  errorText: {
+    fontSize: 12.5,
+    color: colors.neg,
+    fontWeight: '600',
+    flex: 1,
   },
   sheetContainer: {
     backgroundColor: colors.surface,

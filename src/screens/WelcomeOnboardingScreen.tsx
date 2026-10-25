@@ -90,12 +90,13 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           {/* Top Brand Banner */}
           <View style={styles.topBannerBox}>
@@ -148,7 +149,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
                 <Text style={styles.inputLabel}>Email Address</Text>
                 <TextInput
                   style={styles.textInput}
-                  placeholder="e.g. ali.raza@example.com"
+                  placeholder="e.g. john.doe@example.com"
                   placeholderTextColor={colors.subtle}
                   keyboardType="email-address"
                   autoCapitalize="none"

@@ -1,7 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -17,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
@@ -40,19 +40,37 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const [name, setName] = useState(userProfile.name);
   const [email, setEmail] = useState(userProfile.email);
   const [phone, setPhone] = useState(userProfile.phone || '');
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // PIN Setup Modal state
   const [showPinModal, setShowPinModal] = useState(false);
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  // Confirm modals
+  const [showDisablePinConfirm, setShowDisablePinConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [alertInfo, setAlertInfo] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    icon?: keyof typeof MaterialIcons.glyphMap;
+    type?: 'info' | 'danger' | 'warning';
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
 
   const handleSaveProfile = async () => {
+    setProfileError(null);
     if (!name.trim()) {
-      Alert.alert('Name Required', 'Please enter your name.');
+      setProfileError('Please enter your name.');
       return;
     }
     if (!email.trim() || !email.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      setProfileError('Please enter a valid email address.');
       return;
     }
     await updateUserProfile({
@@ -61,43 +79,34 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       phone: phone.trim(),
     });
     setIsEditing(false);
-    Alert.alert('Success', 'Profile updated successfully.');
+    setAlertInfo({
+      visible: true,
+      title: 'Profile Updated',
+      message: 'Your personal information has been saved successfully.',
+      icon: 'check-circle',
+      type: 'info',
+    });
   };
 
   const handleTogglePin = (value: boolean) => {
     if (value) {
-      // Opening PIN setup
       setNewPin('');
       setConfirmPin('');
+      setPinError(null);
       setShowPinModal(true);
     } else {
-      Alert.alert(
-        'Disable App Lock',
-        'Are you sure you want to remove your 4-digit PIN security lock?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Disable PIN',
-            style: 'destructive',
-            onPress: async () => {
-              await updateSecuritySettings({
-                isPinEnabled: false,
-                pin: null,
-              });
-            },
-          },
-        ]
-      );
+      setShowDisablePinConfirm(true);
     }
   };
 
   const handleSavePin = async () => {
+    setPinError(null);
     if (newPin.length !== 4) {
-      Alert.alert('Invalid PIN', 'PIN must be exactly 4 numeric digits.');
+      setPinError('PIN must be exactly 4 numeric digits.');
       return;
     }
     if (newPin !== confirmPin) {
-      Alert.alert('PIN Mismatch', 'Confirmation PIN does not match. Please re-enter.');
+      setPinError('Confirmation PIN does not match. Please re-enter.');
       return;
     }
 
@@ -106,28 +115,17 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       isPinEnabled: true,
     });
     setShowPinModal(false);
-    Alert.alert('Lock Enabled', 'Pocket Wallet is now protected with your 4-digit PIN.');
+    setAlertInfo({
+      visible: true,
+      title: 'Lock Enabled',
+      message: 'Pocket Wallet is now protected with your 4-digit PIN.',
+      icon: 'lock',
+      type: 'info',
+    });
   };
 
   const handleResetData = () => {
-    Alert.alert(
-      'Wipe All Data',
-      'This will completely wipe all transactions, bills, friends ledger entries, and reset wallet balance to 0. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Wipe All Data',
-          style: 'destructive',
-          onPress: async () => {
-            await resetAllData();
-            setName('John Doe');
-            setEmail('john.doe@example.com');
-            setPhone('');
-            Alert.alert('Done', 'All wallet data has been wiped.');
-          },
-        },
-      ]
-    );
+    setShowResetConfirm(true);
   };
 
   return (
@@ -240,6 +238,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             )}
           </View>
 
+          {isEditing && profileError && (
+            <View style={styles.errorBox}>
+              <MaterialIcons name="error-outline" size={15} color={colors.neg} />
+              <Text style={styles.errorBoxText}>{profileError}</Text>
+            </View>
+          )}
+
           {isEditing && (
             <TouchableOpacity
               style={styles.saveProfileBtn}
@@ -341,14 +346,15 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         visible={showPinModal}
         transparent
         animationType="slide"
+        statusBarTranslucent
         onRequestClose={() => setShowPinModal(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setShowPinModal(false)}>
-          <View style={styles.modalBackdrop}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={styles.modalKeyboardAvoid}
-            >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <TouchableWithoutFeedback onPress={() => setShowPinModal(false)}>
+            <View style={styles.modalBackdrop}>
               <TouchableWithoutFeedback>
                 <View style={styles.pinSheetContainer}>
                   <View style={styles.dragHandle} />
@@ -360,6 +366,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                       This PIN will be required every time you open Pocket Wallet.
                     </Text>
                   </View>
+
+                  {pinError && (
+                    <View style={styles.pinErrorBox}>
+                      <MaterialIcons name="error-outline" size={15} color={colors.neg} />
+                      <Text style={styles.pinErrorText}>{pinError}</Text>
+                    </View>
+                  )}
 
                   <View style={styles.pinInputBlock}>
                     <Text style={styles.pinInputLabel}>Choose 4-digit PIN</Text>
@@ -411,10 +424,66 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                   </View>
                 </View>
               </TouchableWithoutFeedback>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
+
+      {/* Disable PIN Confirmation */}
+      <ConfirmModal
+        visible={showDisablePinConfirm}
+        title="Disable App Lock"
+        message="Are you sure you want to remove your 4-digit PIN security lock?"
+        confirmText="Disable PIN"
+        cancelText="Cancel"
+        type="warning"
+        icon="lock-open"
+        onConfirm={async () => {
+          setShowDisablePinConfirm(false);
+          await updateSecuritySettings({
+            isPinEnabled: false,
+            pin: null,
+          });
+        }}
+        onCancel={() => setShowDisablePinConfirm(false)}
+      />
+
+      {/* Wipe All Data Confirmation */}
+      <ConfirmModal
+        visible={showResetConfirm}
+        title="Wipe All Data"
+        message="This will completely wipe all transactions, bills, friends ledger entries, and reset wallet balance to 0. Continue?"
+        confirmText="Wipe All Data"
+        cancelText="Cancel"
+        type="danger"
+        icon="delete-sweep"
+        onConfirm={async () => {
+          setShowResetConfirm(false);
+          await resetAllData();
+          setName('John Doe');
+          setEmail('john.doe@example.com');
+          setPhone('');
+          setAlertInfo({
+            visible: true,
+            title: 'Data Wiped',
+            message: 'All wallet data has been wiped clean.',
+            icon: 'check-circle',
+            type: 'info',
+          });
+        }}
+        onCancel={() => setShowResetConfirm(false)}
+      />
+
+      {/* Branded Alert / Info Modal */}
+      <ConfirmModal
+        visible={alertInfo.visible}
+        title={alertInfo.title}
+        message={alertInfo.message}
+        confirmText="OK"
+        type={alertInfo.type || 'info'}
+        icon={alertInfo.icon || 'info'}
+        onConfirm={() => setAlertInfo({ visible: false, title: '', message: '' })}
+      />
     </View>
   );
 };
@@ -739,5 +808,37 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.negSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginVertical: 10,
+  },
+  errorBoxText: {
+    fontSize: 12.5,
+    color: colors.neg,
+    fontWeight: '500',
+    flex: 1,
+  },
+  pinErrorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.negSoft,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginBottom: 12,
+  },
+  pinErrorText: {
+    fontSize: 12.5,
+    color: colors.neg,
+    fontWeight: '500',
+    flex: 1,
   },
 });
