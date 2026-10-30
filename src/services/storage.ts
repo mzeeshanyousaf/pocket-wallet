@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SecurityService } from './security';
 import {
   Bill,
   Friend,
@@ -117,6 +118,22 @@ export const StorageService = {
             biometricsEnabled: false,
           };
 
+      // Security Migration: If legacy plaintext PIN exists in AsyncStorage, migrate to SecureStore and scrub
+      if (securitySettings.pin) {
+        await SecurityService.setPin(securitySettings.pin);
+        securitySettings.pin = null;
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.SECURITY_SETTINGS,
+          JSON.stringify(securitySettings)
+        );
+      }
+
+      // Check whether a PIN is actually enrolled in SecureStore
+      const hasSecurePin = await SecurityService.hasPin();
+      if (!hasSecurePin && securitySettings.isPinEnabled) {
+        securitySettings.isPinEnabled = false;
+      }
+
       return {
         balance,
         transactions,
@@ -206,9 +223,14 @@ export const StorageService = {
 
   async saveSecuritySettings(settings: SecuritySettings): Promise<void> {
     try {
+      // Security hygiene: Never write plaintext PIN to AsyncStorage
+      const scrubbed: SecuritySettings = {
+        ...settings,
+        pin: null,
+      };
       await AsyncStorage.setItem(
         STORAGE_KEYS.SECURITY_SETTINGS,
-        JSON.stringify(settings)
+        JSON.stringify(scrubbed)
       );
     } catch (e) {
       console.error('Error saving security settings:', e);

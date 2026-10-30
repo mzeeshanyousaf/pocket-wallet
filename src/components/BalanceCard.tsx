@@ -1,6 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { heroShadow, radius } from '../theme/tokens';
@@ -24,13 +25,34 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
 
   const maskValue = (val: string) => (balanceHidden ? '••••••' : val);
 
+  const handleCashIn = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    onCashIn();
+  };
+
+  const handleCashOut = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    onCashOut();
+  };
+
+  const handleToggle = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    onToggleBalance();
+  };
+
   return (
     <View style={[styles.card, heroShadow]}>
       {/* Top row: Label & Visibility Eye */}
       <View style={styles.topRow}>
         <Text style={styles.topLabel}>Available balance</Text>
         <TouchableOpacity
-          onPress={onToggleBalance}
+          onPress={handleToggle}
           style={styles.eyeBtn}
           accessibilityLabel={balanceHidden ? 'Show balance' : 'Hide balance'}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -74,7 +96,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={styles.cashInBtn}
-          onPress={onCashIn}
+          onPress={handleCashIn}
           activeOpacity={0.88}
         >
           <View style={styles.plusCircle}>
@@ -85,7 +107,7 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
 
         <TouchableOpacity
           style={styles.cashOutBtn}
-          onPress={onCashOut}
+          onPress={handleCashOut}
           activeOpacity={0.88}
         >
           <View style={styles.minusCircle}>
@@ -134,12 +156,14 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.65)',
+    fontVariant: ['tabular-nums'],
   },
   balanceText: {
     fontSize: 38,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
   },
   statsRow: {
     flexDirection: 'row',
@@ -161,6 +185,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
     letterSpacing: -0.2,
+    fontVariant: ['tabular-nums'],
   },
   actionsRow: {
     flexDirection: 'row',

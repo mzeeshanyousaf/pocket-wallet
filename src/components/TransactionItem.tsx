@@ -157,6 +157,7 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '700',
     marginRight: 8,
+    fontVariant: ['tabular-nums'],
   },
   deleteBtn: {
     width: 28,

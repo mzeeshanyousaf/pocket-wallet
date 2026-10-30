@@ -154,10 +154,12 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '600',
     color: colors.subtle,
+    fontVariant: ['tabular-nums'],
   },
   netAmount: {
     fontSize: 14.5,
     fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   owesLabel: {
     fontSize: 11.5,

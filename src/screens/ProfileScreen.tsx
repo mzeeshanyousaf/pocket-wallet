@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useWallet } from '../context/WalletContext';
+import { SecurityService } from '../services/security';
 import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
 
@@ -126,7 +127,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   const handleToggleBiometrics = async (val: boolean) => {
     if (val) {
-      if (!securitySettings.isPinEnabled || !securitySettings.pin) {
+      if (!securitySettings.isPinEnabled) {
         setAlertInfo({
           visible: true,
           title: 'Set PIN First',
@@ -173,8 +174,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       return;
     }
 
+    // Persist PIN salted hash in SecureStore hardware storage
+    await SecurityService.setPin(newPin);
+
+    // Save security settings flag without plaintext PIN
     await updateSecuritySettings({
-      pin: newPin,
+      pin: null,
       isPinEnabled: true,
     });
     setShowPinModal(false);
@@ -331,13 +336,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             <View style={styles.settingTextContainer}>
               <Text style={styles.settingTitle}>Require PIN on startup</Text>
               <Text style={styles.settingSubtitle}>
-                {securitySettings.isPinEnabled && securitySettings.pin
+                {securitySettings.isPinEnabled
                   ? 'Active · 4-digit PIN is protecting wallet'
                   : 'Disabled · Open without passcode'}
               </Text>
             </View>
             <Switch
-              value={securitySettings.isPinEnabled && !!securitySettings.pin}
+              value={securitySettings.isPinEnabled}
               onValueChange={handleTogglePin}
               trackColor={{ false: colors.line, true: colors.brand }}
               thumbColor="#FFFFFF"
@@ -345,7 +350,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           </View>
 
           {/* Change PIN option if already enabled */}
-          {securitySettings.isPinEnabled && !!securitySettings.pin && (
+          {securitySettings.isPinEnabled && (
             <>
               <View style={styles.separator} />
               <TouchableOpacity
@@ -380,7 +385,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 <View style={styles.settingTextContainer}>
                   <Text style={styles.settingTitle}>{biometricName} unlock</Text>
                   <Text style={styles.settingSubtitle}>
-                    {!securitySettings.isPinEnabled || !securitySettings.pin
+                    {!securitySettings.isPinEnabled
                       ? 'Set 4-digit PIN first to activate'
                       : securitySettings.biometricsEnabled
                       ? `Active · Unlock with ${biometricName} or PIN`
@@ -388,7 +393,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                   </Text>
                 </View>
                 <Switch
-                  value={securitySettings.biometricsEnabled && !!securitySettings.pin}
+                  value={securitySettings.biometricsEnabled && securitySettings.isPinEnabled}
                   onValueChange={handleToggleBiometrics}
                   trackColor={{ false: colors.line, true: colors.brand }}
                   thumbColor="#FFFFFF"
@@ -432,7 +437,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
               Made with love by Zeeshan
             </Text>
           </TouchableOpacity>
-          <Text style={styles.offlineText}>Offline-First Local Storage · Private & Encrypted</Text>
+          <Text style={styles.offlineText}>Offline-First Local Storage · 100% On-Device & Private</Text>
         </View>
       </ScrollView>
 
@@ -539,6 +544,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         icon="lock-open"
         onConfirm={async () => {
           setShowDisablePinConfirm(false);
+          await SecurityService.removePin();
           await updateSecuritySettings({
             isPinEnabled: false,
             pin: null,

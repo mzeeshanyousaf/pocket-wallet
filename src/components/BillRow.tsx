@@ -214,6 +214,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.ink,
+    fontVariant: ['tabular-nums'],
   },
   amountTextPaid: {
     color: colors.muted,

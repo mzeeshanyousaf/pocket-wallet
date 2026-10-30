@@ -256,8 +256,8 @@ function WelcomeSplashScreen({ onFinish }: { onFinish: () => void }) {
 
 function AppContent() {
   const { isLoaded, isUnlocked, unlockApp, lockApp, securitySettings } = useWallet();
-  const [showWelcomeSplash, setShowWelcomeSplash] = useState(true);
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
+  const [isBackgrounded, setIsBackgrounded] = useState(false);
   const appStateRef = useRef<string>('active');
 
   useEffect(() => {
@@ -267,18 +267,17 @@ function AppContent() {
     })();
   }, []);
 
-  // Lock the app when it goes to background (if lock is enabled)
+  // Lock the app and shield screen when it goes to background / app switcher
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const isLockEnabled =
-        (securitySettings.isPinEnabled && !!securitySettings.pin) ||
-        securitySettings.biometricsEnabled;
+        securitySettings.isPinEnabled || securitySettings.biometricsEnabled;
 
-      if (isLockEnabled) {
-        if (
-          appStateRef.current === 'active' &&
-          (nextState === 'background' || nextState === 'inactive')
-        ) {
+      const goingInactive = nextState === 'background' || nextState === 'inactive';
+      setIsBackgrounded(goingInactive);
+
+      if (isLockEnabled && goingInactive) {
+        if (appStateRef.current === 'active') {
           lockApp();
         }
       }
@@ -293,16 +292,7 @@ function AppContent() {
     setIsOnboarded(true);
   };
 
-  // 1. Initial splash branding
-  if (showWelcomeSplash) {
-    return (
-      <View style={styles.appContainer}>
-        <WelcomeSplashScreen onFinish={() => setShowWelcomeSplash(false)} />
-      </View>
-    );
-  }
-
-  // 2. Loading state while reading AsyncStorage
+  // 1. Loading state while reading AsyncStorage (fast native hydrator)
   if (!isLoaded || isOnboarded === null) {
     return (
       <View style={[styles.appContainer, styles.centeredLoading]}>
@@ -315,7 +305,7 @@ function AppContent() {
     );
   }
 
-  // 3. First-time account creation & onboarding
+  // 2. First-time account creation & onboarding
   if (!isOnboarded) {
     return (
       <View style={styles.appContainer}>
@@ -325,24 +315,47 @@ function AppContent() {
     );
   }
 
-  // 4. PIN / Biometric Lock Screen (if lock is enabled and app is locked)
-  const isLockEnabled = (securitySettings.isPinEnabled && !!securitySettings.pin) || securitySettings.biometricsEnabled;
+  // 3. PIN / Biometric Lock Screen (if lock is enabled and app is locked)
+  const isLockEnabled = securitySettings.isPinEnabled || securitySettings.biometricsEnabled;
   if (isLockEnabled && !isUnlocked) {
     return (
       <View style={styles.appContainer}>
         <StatusBar style="dark" />
         <PinLockScreen onSuccess={unlockApp} />
+        {/* Privacy Shield when minimized in multitasking carousel */}
+        {isBackgrounded && (
+          <View style={styles.privacyShield}>
+            <Image
+              source={require('./assets/logos/logo_mark_symbol_1024x1024.png')}
+              style={styles.loadingLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.privacyShieldText}>Pocket Wallet is Locked</Text>
+          </View>
+        )}
       </View>
     );
   }
 
-  // 5. Main Authenticated Application
+  // 4. Main Authenticated Application
   return (
     <View style={styles.appContainer}>
       <NavigationContainer>
         <StatusBar style="dark" />
         <MainTabs />
       </NavigationContainer>
+
+      {/* Multitasking Privacy Shield: Obscures financial balances in OS app switcher */}
+      {isBackgrounded && isLockEnabled && (
+        <View style={styles.privacyShield}>
+          <Image
+            source={require('./assets/logos/logo_mark_symbol_1024x1024.png')}
+            style={styles.loadingLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.privacyShieldText}>Pocket Wallet is Locked</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -361,6 +374,23 @@ const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
     backgroundColor: colors.canvas,
+  },
+  privacyShield: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 99999,
+  },
+  privacyShieldText: {
+    marginTop: 16,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.muted,
   },
   centeredLoading: {
     alignItems: 'center',

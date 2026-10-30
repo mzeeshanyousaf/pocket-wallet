@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { NotificationService } from '../services/notifications';
+import { SecurityService } from '../services/security';
 import { StorageService } from '../services/storage';
 import {
   Bill,
@@ -1005,6 +1006,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   const resetAllData = useCallback(async () => {
     // Cancel every scheduled notification before wiping data
     await NotificationService.cancelAllNotifications();
+    await SecurityService.removePin();
 
     const data = await StorageService.resetToDefaults();
     setBalance(data.balance);
@@ -1107,7 +1109,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const lockApp = useCallback(() => {
-    if (securitySettings.isPinEnabled && securitySettings.pin) {
+    if (securitySettings.isPinEnabled || securitySettings.biometricsEnabled) {
       setIsUnlocked(false);
     }
   }, [securitySettings]);

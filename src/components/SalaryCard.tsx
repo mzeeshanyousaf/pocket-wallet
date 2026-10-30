@@ -211,12 +211,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.65)',
+    fontVariant: ['tabular-nums'],
   },
   amountText: {
     fontSize: 34,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: -0.4,
+    fontVariant: ['tabular-nums'],
   },
   gridRow: {
     flexDirection: 'row',

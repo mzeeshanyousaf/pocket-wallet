@@ -1,4 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -13,11 +14,68 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWallet } from '../context/WalletContext';
+import { useReducedMotion } from '../hooks/useReducedMotion';
+import { SecurityService } from '../services/security';
 import { colors } from '../theme/colors';
 
 interface PinLockScreenProps {
   onSuccess: () => void;
 }
+
+interface KeypadButtonProps {
+  onPress: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+  style?: any;
+  accessibilityLabel?: string;
+}
+
+const KeypadButton: React.FC<KeypadButtonProps> = ({
+  onPress,
+  disabled,
+  children,
+  style,
+  accessibilityLabel,
+}) => {
+  const [scaleAnim] = useState(() => new Animated.Value(1));
+  const reducedMotion = useReducedMotion();
+
+  const handlePressIn = () => {
+    if (disabled || reducedMotion) return;
+    Animated.spring(scaleAnim, {
+      toValue: 0.92,
+      speed: 60,
+      bounciness: 0,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    if (disabled || reducedMotion) return;
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      speed: 40,
+      bounciness: 6,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale: scaleAnim }], opacity: disabled ? 0.35 : 1 }}>
+      <TouchableOpacity
+        style={style}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+        activeOpacity={0.7}
+        accessibilityLabel={accessibilityLabel}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
   const insets = useSafeAreaInsets();
@@ -25,27 +83,64 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
   const [enteredPin, setEnteredPin] = useState('');
   const [errorShake] = useState(new Animated.Value(0));
   const [errorMessage, setErrorMessage] = useState('');
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
   const [biometricsAvailable, setBiometricsAvailable] = useState(false);
   const [biometricTypeLabel, setBiometricTypeLabel] = useState<'Fingerprint' | 'Face ID'>('Fingerprint');
 
-  const triggerShake = () => {
+  const reducedMotion = useReducedMotion();
+
+  // Check initial rate-limit lockout status
+  useEffect(() => {
+    SecurityService.getLockoutStatus().then((status) => {
+      if (status.isLocked) {
+        setLockoutSeconds(status.remainingLockoutSeconds);
+        setErrorMessage(`Too many attempts. Locked for ${status.remainingLockoutSeconds}s.`);
+      }
+    });
+  }, []);
+
+  // Active countdown timer during lockout window
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => {
+        if (prev <= 1) {
+          setErrorMessage('');
+          return 0;
+        }
+        setErrorMessage(`Too many attempts. Locked for ${prev - 1}s.`);
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
+
+  const triggerShake = useCallback(() => {
+    if (reducedMotion) {
+      // Respect accessibility preference for reduced motion
+      return;
+    }
+
     if (Platform.OS !== 'web') {
       try {
-        Vibration.vibrate(150);
+        Vibration.vibrate(100);
       } catch (e) {
         console.log('Vibration note:', e);
       }
     }
+
     Animated.sequence([
-      Animated.timing(errorShake, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(errorShake, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(errorShake, { toValue: 8, duration: 50, useNativeDriver: true }),
-      Animated.timing(errorShake, { toValue: -8, duration: 50, useNativeDriver: true }),
-      Animated.timing(errorShake, { toValue: 0, duration: 50, useNativeDriver: true }),
+      Animated.timing(errorShake, { toValue: 8, duration: 40, useNativeDriver: true }),
+      Animated.timing(errorShake, { toValue: -8, duration: 40, useNativeDriver: true }),
+      Animated.timing(errorShake, { toValue: 6, duration: 40, useNativeDriver: true }),
+      Animated.timing(errorShake, { toValue: -6, duration: 40, useNativeDriver: true }),
+      Animated.timing(errorShake, { toValue: 0, duration: 40, useNativeDriver: true }),
     ]).start();
-  };
+  }, [errorShake, reducedMotion]);
 
   const triggerBiometricAuth = useCallback(async () => {
+    if (lockoutSeconds > 0) return;
     try {
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: 'Unlock Pocket Wallet',
@@ -54,12 +149,16 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
       });
 
       if (result.success) {
+        await SecurityService.resetFailedAttempts();
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        }
         onSuccess();
       }
     } catch (err) {
       console.log('Biometric auth error:', err);
     }
-  }, [onSuccess]);
+  }, [lockoutSeconds, onSuccess]);
 
   useEffect(() => {
     let isMounted = true;
@@ -76,8 +175,8 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
             setBiometricTypeLabel('Fingerprint');
           }
 
-          // Automatically prompt for fingerprint if user enabled biometrics
-          if (securitySettings.biometricsEnabled) {
+          // Automatically prompt for fingerprint if user enabled biometrics and not locked out
+          if (securitySettings.biometricsEnabled && lockoutSeconds === 0) {
             setTimeout(() => {
               if (isMounted) {
                 triggerBiometricAuth();
@@ -93,20 +192,43 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
     return () => {
       isMounted = false;
     };
-  }, [securitySettings.biometricsEnabled, triggerBiometricAuth]);
+  }, [securitySettings.biometricsEnabled, lockoutSeconds, triggerBiometricAuth]);
 
-  const handleKeyPress = (num: string) => {
+  const handleKeyPress = async (num: string) => {
+    if (lockoutSeconds > 0) return;
     if (enteredPin.length >= 4) return;
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+
     const newPin = enteredPin + num;
     setEnteredPin(newPin);
     setErrorMessage('');
 
     if (newPin.length === 4) {
-      if (newPin === securitySettings.pin) {
+      const isValid = await SecurityService.verifyPin(newPin);
+      if (isValid) {
+        await SecurityService.resetFailedAttempts();
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        }
         onSuccess();
       } else {
+        const rateResult = await SecurityService.recordFailedAttempt();
         triggerShake();
-        setErrorMessage('Incorrect PIN. Please try again.');
+
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        }
+
+        if (rateResult.isLocked) {
+          setLockoutSeconds(rateResult.remainingLockoutSeconds);
+          setErrorMessage(`Too many attempts. Locked for ${rateResult.remainingLockoutSeconds}s.`);
+        } else {
+          setErrorMessage(`Incorrect PIN. ${rateResult.attempts} failed attempt${rateResult.attempts > 1 ? 's' : ''}.`);
+        }
+
         setTimeout(() => {
           setEnteredPin('');
         }, 300);
@@ -115,13 +237,18 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
   };
 
   const handleDelete = () => {
+    if (lockoutSeconds > 0) return;
     if (enteredPin.length > 0) {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      }
       setEnteredPin(enteredPin.slice(0, -1));
       setErrorMessage('');
     }
   };
 
   const showBiometrics = biometricsAvailable && securitySettings.biometricsEnabled;
+  const isKeypadDisabled = lockoutSeconds > 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
@@ -135,7 +262,9 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
         <Text style={styles.welcomeText}>Welcome back,</Text>
         <Text style={styles.userName}>{userProfile.name || 'Pocket Wallet'}</Text>
         <Text style={styles.instruction}>
-          {showBiometrics
+          {lockoutSeconds > 0
+            ? 'Keypad temporarily locked'
+            : showBiometrics
             ? `Use ${biometricTypeLabel} or enter 4-digit PIN`
             : 'Enter your 4-digit PIN to unlock'}
         </Text>
@@ -164,55 +293,60 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
       </Animated.View>
 
       {errorMessage ? (
-        <Text style={styles.errorText}>{errorMessage}</Text>
+        <Text style={[styles.errorText, lockoutSeconds > 0 && styles.lockoutErrorText]}>
+          {errorMessage}
+        </Text>
       ) : (
         <View style={styles.errorPlaceholder} />
       )}
 
-      {/* Numeric Keypad */}
+      {/* Numeric Keypad with Micro-Spring Tactile Interaction */}
       <View style={styles.keypad}>
         <View style={styles.keypadRow}>
           {['1', '2', '3'].map((n) => (
-            <TouchableOpacity
+            <KeypadButton
               key={n}
               style={styles.key}
               onPress={() => handleKeyPress(n)}
-              activeOpacity={0.6}
+              disabled={isKeypadDisabled}
+              accessibilityLabel={`Digit ${n}`}
             >
               <Text style={styles.keyText}>{n}</Text>
-            </TouchableOpacity>
+            </KeypadButton>
           ))}
         </View>
         <View style={styles.keypadRow}>
           {['4', '5', '6'].map((n) => (
-            <TouchableOpacity
+            <KeypadButton
               key={n}
               style={styles.key}
               onPress={() => handleKeyPress(n)}
-              activeOpacity={0.6}
+              disabled={isKeypadDisabled}
+              accessibilityLabel={`Digit ${n}`}
             >
               <Text style={styles.keyText}>{n}</Text>
-            </TouchableOpacity>
+            </KeypadButton>
           ))}
         </View>
         <View style={styles.keypadRow}>
           {['7', '8', '9'].map((n) => (
-            <TouchableOpacity
+            <KeypadButton
               key={n}
               style={styles.key}
               onPress={() => handleKeyPress(n)}
-              activeOpacity={0.6}
+              disabled={isKeypadDisabled}
+              accessibilityLabel={`Digit ${n}`}
             >
               <Text style={styles.keyText}>{n}</Text>
-            </TouchableOpacity>
+            </KeypadButton>
           ))}
         </View>
         <View style={styles.keypadRow}>
           {showBiometrics ? (
-            <TouchableOpacity
+            <KeypadButton
               style={[styles.key, styles.bioKey]}
               onPress={triggerBiometricAuth}
-              activeOpacity={0.6}
+              disabled={isKeypadDisabled}
               accessibilityLabel={`Unlock with ${biometricTypeLabel}`}
             >
               <MaterialIcons
@@ -220,31 +354,33 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
                 size={30}
                 color={colors.brand}
               />
-            </TouchableOpacity>
+            </KeypadButton>
           ) : (
             <View style={styles.emptyKey} />
           )}
-          <TouchableOpacity
+          <KeypadButton
             style={styles.key}
             onPress={() => handleKeyPress('0')}
-            activeOpacity={0.6}
+            disabled={isKeypadDisabled}
+            accessibilityLabel="Digit 0"
           >
             <Text style={styles.keyText}>0</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </KeypadButton>
+          <KeypadButton
             style={styles.key}
             onPress={handleDelete}
-            activeOpacity={0.6}
+            disabled={isKeypadDisabled}
+            accessibilityLabel="Backspace"
           >
             <MaterialIcons name="backspace" size={24} color={colors.ink} />
-          </TouchableOpacity>
+          </KeypadButton>
         </View>
       </View>
 
       {/* Security Tagline */}
       <View style={styles.footerNote}>
         <MaterialIcons name="security" size={14} color={colors.subtle} />
-        <Text style={styles.footerNoteText}>Encrypted on-device wallet</Text>
+        <Text style={styles.footerNoteText}>Protected on-device wallet</Text>
       </View>
     </View>
   );
@@ -310,6 +446,10 @@ const styles = StyleSheet.create({
     color: colors.neg,
     fontWeight: '600',
     height: 20,
+    textAlign: 'center',
+  },
+  lockoutErrorText: {
+    color: colors.warn,
   },
   errorPlaceholder: {
     height: 20,
