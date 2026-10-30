@@ -1,0 +1,28 @@
+{
+  "$schema": "https://antigravity.google/schemas/settings.json",
+  "project": {
+    "name": "pocket-wallet",
+    "description": "Offline-first personal finance and budget manager built with Expo and React Native",
+    "framework": "expo",
+    "platform": "react-native",
+    "guidelines": "AGENTS.md"
+  },
+  "skills": {
+    "directory": "./skills",
+    "autoTrigger": true,
+    "enabled": [
+      "security-audit",
+      "design-motion-principles",
+      "frontend-design",
+      "tailwind-design-system",
+      "user-research"
+    ]
+  },
+  "permissions": {
+    "toolExecutionPolicy": "request-review",
+    "nonWorkspaceFileAccess": "ask",
+    "internetAccess": "allow",
+    "sandboxMode": false
+  },
+  "urlRandomness": "yl92nlw"
+}
