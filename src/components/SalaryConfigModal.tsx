@@ -16,7 +16,7 @@ import {
 import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/tokens';
-import { formatRs } from '../utils/formatters';
+import { formatRs, getOrdinal } from '../utils/formatters';
 
 interface SalaryConfigModalProps {
   visible: boolean;
@@ -29,19 +29,33 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
 }) => {
   const { salaryConfig, updateSalaryConfig, receiveSalary } = useWallet();
 
-  const [amountStr, setAmountStr] = useState('');
-  const [dayOfMonth, setDayOfMonth] = useState<number>(1);
-  const [autoPrompt, setAutoPrompt] = useState<boolean>(true);
+  const [draftAmount, setDraftAmount] = useState<string | null>(null);
+  const [draftDayOfMonth, setDraftDayOfMonth] = useState<number | null>(null);
+  const [draftAutoPrompt, setDraftAutoPrompt] = useState<boolean | null>(null);
   const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleShow = () => {
-    setAmountStr(salaryConfig.amount > 0 ? salaryConfig.amount.toString() : '');
-    setDayOfMonth(salaryConfig.dayOfMonth || 1);
-    setAutoPrompt(salaryConfig.autoPrompt !== false);
+  const amountStr =
+    draftAmount ??
+    (salaryConfig.amount > 0 ? salaryConfig.amount.toString() : '');
+  const dayOfMonth = draftDayOfMonth ?? (salaryConfig.dayOfMonth || 1);
+  const autoPrompt = draftAutoPrompt ?? salaryConfig.autoPrompt !== false;
+
+  const resetDrafts = () => {
+    setDraftAmount(null);
+    setDraftDayOfMonth(null);
+    setDraftAutoPrompt(null);
     setErrorText('');
+    setIsSubmitting(false);
+  };
+
+  const handleClose = () => {
+    resetDrafts();
+    onClose();
   };
 
   const handleSave = async () => {
+    if (isSubmitting) return;
     setErrorText('');
     const numAmount = parseFloat(amountStr.replace(/,/g, ''));
     if (isNaN(numAmount) || numAmount <= 0) {
@@ -49,20 +63,46 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
       return;
     }
 
-    await updateSalaryConfig({
-      ...salaryConfig,
-      amount: numAmount,
-      dayOfMonth,
-      autoPrompt,
-    });
-
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await updateSalaryConfig({
+        ...salaryConfig,
+        amount: numAmount,
+        dayOfMonth,
+        autoPrompt,
+      });
+      handleClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleTestTrigger = async () => {
-    const numAmount = parseFloat(amountStr.replace(/,/g, '')) || salaryConfig.amount;
-    await receiveSalary(numAmount);
-    onClose();
+    if (isSubmitting) return;
+    setErrorText('');
+    const numAmount =
+      parseFloat(amountStr.replace(/,/g, '')) || salaryConfig.amount;
+    if (isNaN(numAmount) || numAmount <= 0) {
+      setErrorText('Please enter a valid salary amount in Rs.');
+      return;
+    }
+
+    const now = new Date();
+    const currentMonthYear = `${now.getFullYear()}-${String(
+      now.getMonth() + 1
+    ).padStart(2, '0')}`;
+    if (salaryConfig.lastCreditedMonthYear === currentMonthYear) {
+      setErrorText('Salary for this month has already been credited.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await receiveSalary(numAmount);
+      handleClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -70,15 +110,15 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
-      onShow={handleShow}
+      onShow={resetDrafts}
+      onRequestClose={handleClose}
       statusBarTranslucent
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidRoot}
       >
-        <TouchableWithoutFeedback onPress={onClose}>
+        <TouchableWithoutFeedback onPress={handleClose}>
           <View style={styles.backdrop}>
             <TouchableWithoutFeedback>
               <View style={styles.sheetContainer}>
@@ -89,7 +129,7 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                 <View style={styles.titleRow}>
                   <Text style={styles.sheetTitle}>Salary &amp; Payday Cycle</Text>
                   <TouchableOpacity
-                    onPress={onClose}
+                    onPress={handleClose}
                     style={styles.closeBtn}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
@@ -120,8 +160,9 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                         placeholder="0"
                         placeholderTextColor={colors.line}
                         keyboardType="numeric"
+                        maxLength={10}
                         value={amountStr}
-                        onChangeText={(txt) => setAmountStr(txt.replace(/[^0-9]/g, ''))}
+                        onChangeText={(txt) => setDraftAmount(txt.replace(/[^0-9]/g, ''))}
                         autoFocus
                       />
                     </View>
@@ -133,7 +174,9 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                     <View style={styles.stepperContainer}>
                       <TouchableOpacity
                         style={styles.stepBtn}
-                        onPress={() => setDayOfMonth((d) => (d > 1 ? d - 1 : 31))}
+                        onPress={() =>
+                          setDraftDayOfMonth(dayOfMonth > 1 ? dayOfMonth - 1 : 31)
+                        }
                         activeOpacity={0.7}
                       >
                         <MaterialIcons name="remove" size={20} color={colors.ink} />
@@ -142,19 +185,15 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                       <View style={styles.dayValueBox}>
                         <Text style={styles.dayValueNum}>{dayOfMonth}</Text>
                         <Text style={styles.dayValueSub}>
-                          {dayOfMonth === 1
-                            ? '1st of every month'
-                            : dayOfMonth === 2
-                            ? '2nd of every month'
-                            : dayOfMonth === 3
-                            ? '3rd of every month'
-                            : `${dayOfMonth}th of every month`}
+                          {getOrdinal(dayOfMonth)} of every month
                         </Text>
                       </View>
 
                       <TouchableOpacity
                         style={styles.stepBtn}
-                        onPress={() => setDayOfMonth((d) => (d < 31 ? d + 1 : 1))}
+                        onPress={() =>
+                          setDraftDayOfMonth(dayOfMonth < 31 ? dayOfMonth + 1 : 1)
+                        }
                         activeOpacity={0.7}
                       >
                         <MaterialIcons name="add" size={20} color={colors.ink} />
@@ -172,7 +211,7 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                     </View>
                     <Switch
                       value={autoPrompt}
-                      onValueChange={setAutoPrompt}
+                      onValueChange={setDraftAutoPrompt}
                       trackColor={{ false: colors.line, true: colors.brand }}
                       thumbColor="#FFFFFF"
                     />
@@ -182,6 +221,7 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                   <TouchableOpacity
                     style={styles.testBtnCard}
                     onPress={handleTestTrigger}
+                    disabled={isSubmitting}
                     activeOpacity={0.8}
                   >
                     <View style={styles.testIconBox}>
@@ -200,6 +240,7 @@ export const SalaryConfigModal: React.FC<SalaryConfigModalProps> = ({
                   <TouchableOpacity
                     style={styles.saveBtn}
                     onPress={handleSave}
+                    disabled={isSubmitting}
                     activeOpacity={0.85}
                   >
                     <MaterialIcons name="check" size={18} color="#FFFFFF" />

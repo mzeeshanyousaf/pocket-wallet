@@ -33,7 +33,11 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
         trailing={
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => navigation.goBack()}
+            onPress={() =>
+              navigation.canGoBack()
+                ? navigation.goBack()
+                : navigation.navigate('Profile')
+            }
             activeOpacity={0.7}
           >
             <MaterialIcons name="close" size={20} color={colors.ink} />
@@ -63,7 +67,7 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
               resizeMode="contain"
             />
             <View style={styles.versionPill}>
-              <Text style={styles.versionPillText}>v1.0.0</Text>
+              <Text style={styles.versionPillText}>v1.1.0</Text>
             </View>
           </View>
           <Text style={styles.tagline}>Smart Cashflow & Giving Ledger</Text>
@@ -124,7 +128,35 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
             <View style={styles.featureText}>
               <Text style={styles.featureTitle}>Give &amp; Take Friends Ledger</Text>
               <Text style={styles.featureDesc}>
-                Track who owes you and what you owe, complete with recovery dates and partial repayments.
+                Track who owes you and what you owe, complete with recovery dates, partial repayments, and 1-tap statement sharing.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.separator} />
+
+          <View style={styles.featureItem}>
+            <View style={[styles.featureIcon, { backgroundColor: colors.accentBlueMuted }]}>
+              <MaterialIcons name="credit-card" size={20} color={colors.accentBlue} />
+            </View>
+            <View style={styles.featureText}>
+              <Text style={styles.featureTitle}>Isolated Credit Card Ledger</Text>
+              <Text style={styles.featureDesc}>
+                Track shared card spends, partial friend repayments, and bank payments completely separate from your personal wallet bills and cashflow.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.separator} />
+
+          <View style={styles.featureItem}>
+            <View style={[styles.featureIcon, { backgroundColor: colors.brandSoft }]}>
+              <MaterialIcons name="backup" size={20} color={colors.brand} />
+            </View>
+            <View style={styles.featureText}>
+              <Text style={styles.featureTitle}>Local Backup &amp; Statement Sharing</Text>
+              <Text style={styles.featureDesc}>
+                Export or restore a complete JSON backup of your wallet at any time, and share clean itemized statements via WhatsApp or Messages.
               </Text>
             </View>
           </View>
@@ -138,7 +170,7 @@ export const AboutScreen: React.FC<AboutScreenProps> = ({ navigation }) => {
             <View style={styles.featureText}>
               <Text style={styles.featureTitle}>Hardware &amp; PIN Security</Text>
               <Text style={styles.featureDesc}>
-                4-digit passcode protection with encrypted local AsyncStorage on your device.
+                4-digit passcode &amp; biometric lock with hardware-backed SecureStore for your PIN and 100% local on-device storage.
               </Text>
             </View>
           </View>

@@ -1,9 +1,15 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { Bill } from '../types';
-import { formatBillFrequency, formatDateDisplay, formatRs } from '../utils/formatters';
+import {
+  formatBillFrequency,
+  formatDateDisplay,
+  formatRs,
+  getDaysUntil,
+} from '../utils/formatters';
+import { ConfirmModal } from './ConfirmModal';
 import { StatusTag, TagTone } from './StatusTag';
 
 interface BillRowProps {
@@ -21,17 +27,11 @@ export const BillRow: React.FC<BillRowProps> = ({
   onUnpay,
   onAdvance,
 }) => {
+  const [showUnpayConfirm, setShowUnpayConfirm] = useState(false);
   const isPaid = bill.isPaid;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(bill.dueDate);
-  due.setHours(0, 0, 0, 0);
-
-  const diffTime = due.getTime() - today.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-  const isToday = diffDays === 0;
-  const isOverdue = diffDays < 0 && !isPaid;
+  const { days: diffDays, isPast, isToday } = getDaysUntil(bill.dueDate);
+  const isOverdue = isPast && !isPaid;
 
   let tag: { tone: TagTone; label: string; detail: string } = {
     tone: 'neutral',
@@ -84,11 +84,12 @@ export const BillRow: React.FC<BillRowProps> = ({
   };
 
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={() => (onEdit ? onEdit(bill) : null)}
-      activeOpacity={0.7}
-    >
+    <>
+      <TouchableOpacity
+        style={styles.container}
+        onPress={() => (onEdit ? onEdit(bill) : null)}
+        activeOpacity={0.7}
+      >
       {/* Top row */}
       <View style={styles.topRow}>
         <View style={styles.iconBox}>
@@ -142,7 +143,9 @@ export const BillRow: React.FC<BillRowProps> = ({
           <View style={styles.paidActionsWrap}>
             <TouchableOpacity
               style={styles.settledRow}
-              onPress={() => (onUnpay ? onUnpay(bill.id) : null)}
+              onPress={() => {
+                if (onUnpay) setShowUnpayConfirm(true);
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <MaterialIcons name="check" size={14} color={colors.pos} />
@@ -171,7 +174,23 @@ export const BillRow: React.FC<BillRowProps> = ({
           </TouchableOpacity>
         )}
       </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+
+      <ConfirmModal
+        visible={showUnpayConfirm}
+        title="Reopen Bill?"
+        message={`Reverse the payment for "${bill.title}" and mark it unpaid?`}
+        confirmText="Reopen"
+        cancelText="Cancel"
+        type="warning"
+        icon="undo"
+        onConfirm={() => {
+          setShowUnpayConfirm(false);
+          onUnpay?.(bill.id);
+        }}
+        onCancel={() => setShowUnpayConfirm(false)}
+      />
+    </>
   );
 };
 

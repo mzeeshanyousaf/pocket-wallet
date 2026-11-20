@@ -1,9 +1,15 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { Bill, FriendEntry } from '../types';
-import { formatRs, parseDate } from '../utils/formatters';
+import {
+  formatRs,
+  getEffectivePayday,
+  parseDate,
+  toDateString,
+} from '../utils/formatters';
 
 let handlerInitialized = false;
+let channelConfigured = false;
 
 function ensureNotificationHandler() {
   if (handlerInitialized || Platform.OS === 'web') return;
@@ -11,7 +17,6 @@ function ensureNotificationHandler() {
     if (Notifications && typeof Notifications.setNotificationHandler === 'function') {
       Notifications.setNotificationHandler({
         handleNotification: async () => ({
-          shouldShowAlert: true,
           shouldPlaySound: true,
           shouldSetBadge: false,
           shouldShowBanner: true,
@@ -44,13 +49,14 @@ export const NotificationService = {
         return false;
       }
 
-      if (Platform.OS === 'android') {
+      if (Platform.OS === 'android' && !channelConfigured) {
         await Notifications.setNotificationChannelAsync('default', {
           name: 'Pocket Wallet Reminders',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#10B981',
         });
+        channelConfigured = true;
       }
 
       return true;
@@ -112,6 +118,7 @@ export const NotificationService = {
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: finalTriggerDate,
+          ...(Platform.OS === 'android' ? { channelId: 'default' } : {}),
         },
       });
 
@@ -138,15 +145,17 @@ export const NotificationService = {
     dayOfMonth: number,
     forceNextMonth: boolean = false
   ): Promise<string | undefined> {
+    if (salaryAmount <= 0) return undefined;
+
     const today = new Date();
-    // Determine the next target date for this dayOfMonth
     let targetYear = today.getFullYear();
     let targetMonth = today.getMonth();
+    const thisMonthPayday = getEffectivePayday(targetYear, targetMonth, dayOfMonth);
 
     if (
       forceNextMonth ||
-      today.getDate() > dayOfMonth ||
-      (today.getDate() === dayOfMonth && today.getHours() >= 9)
+      today.getDate() > thisMonthPayday ||
+      (today.getDate() === thisMonthPayday && today.getHours() >= 9)
     ) {
       targetMonth += 1;
       if (targetMonth > 11) {
@@ -155,11 +164,12 @@ export const NotificationService = {
       }
     }
 
-    const targetDate = new Date(targetYear, targetMonth, dayOfMonth);
+    const effectiveDay = getEffectivePayday(targetYear, targetMonth, dayOfMonth);
+    const targetDate = new Date(targetYear, targetMonth, effectiveDay);
     const amountStr = formatRs(salaryAmount);
 
     return await this.scheduleAtNineAM(
-      targetDate.toISOString(),
+      toDateString(targetDate),
       '🎉 Salary Day!',
       `Scheduled Salary of ${amountStr} is ready. Tap to credit your Central Wallet.`,
       { type: 'salary', amount: salaryAmount }

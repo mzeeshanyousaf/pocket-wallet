@@ -19,7 +19,7 @@ import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
 import { Bill } from '../types';
-import { formatRs } from '../utils/formatters';
+import { formatRs, getDaysUntil, parseDate } from '../utils/formatters';
 
 export const BillsSalaryScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
@@ -34,34 +34,31 @@ export const BillsSalaryScreen: React.FC = () => {
 
   // Calculate totals and progress
   const { total, paid, remaining, percentPaid } = useMemo(() => {
-    const tot = bills.reduce((sum, b) => sum + b.estimatedAmount, 0);
     const pd = bills
       .filter((b) => b.isPaid)
       .reduce((sum, b) => sum + (b.lastPaidAmount ?? b.estimatedAmount), 0);
-    const rem = Math.max(0, tot - pd);
+    const rem = bills
+      .filter((b) => !b.isPaid)
+      .reduce((sum, b) => sum + b.estimatedAmount, 0);
+    const tot = pd + rem;
     const pct = tot > 0 ? Math.min(100, Math.round((pd / tot) * 100)) : 0;
     return { total: tot, paid: pd, remaining: rem, percentPaid: pct };
   }, [bills]);
 
   // Sort bills: overdue -> today -> upcoming -> paid
   const sortedBills = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     const getRank = (b: Bill) => {
       if (b.isPaid) return 4;
-      const due = new Date(b.dueDate);
-      due.setHours(0, 0, 0, 0);
-      const diff = due.getTime() - today.getTime();
-      if (diff < 0) return 1; // overdue
-      if (diff === 0) return 2; // today
+      const { isPast, isToday } = getDaysUntil(b.dueDate);
+      if (isPast) return 1; // overdue
+      if (isToday) return 2; // today
       return 3; // upcoming
     };
 
     return [...bills].sort((a, b) => {
       const rankDiff = getRank(a) - getRank(b);
       if (rankDiff !== 0) return rankDiff;
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      return parseDate(a.dueDate).getTime() - parseDate(b.dueDate).getTime();
     });
   }, [bills]);
 

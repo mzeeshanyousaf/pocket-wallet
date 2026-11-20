@@ -2,6 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SecurityService } from './security';
 import {
   Bill,
+  CreditCardBankPayment,
+  CreditCardLedgerEntry,
+  CreditCardMember,
   Friend,
   FriendEntry,
   SalaryConfig,
@@ -18,6 +21,9 @@ const STORAGE_KEYS = {
   SALARY_CONFIG: '@pocket_wallet_salary_config',
   FRIENDS: '@pocket_wallet_friends',
   FRIEND_ENTRIES: '@pocket_wallet_friend_entries',
+  CREDIT_CARD_MEMBERS: '@pocket_wallet_cc_members',
+  CREDIT_CARD_ENTRIES: '@pocket_wallet_cc_entries',
+  CREDIT_CARD_BANK_PAYMENTS: '@pocket_wallet_cc_bank_payments',
   USER_PROFILE: '@pocket_wallet_user_profile',
   SECURITY_SETTINGS: '@pocket_wallet_security_settings',
   INITIALIZED: '@pocket_wallet_clean_v3',
@@ -54,9 +60,23 @@ function getCleanInitialState(): Omit<WalletState, 'isLoaded'> {
     salaryConfig: initialSalaryConfig,
     friends: [],
     friendEntries: [],
+    creditCardMembers: [],
+    creditCardEntries: [],
+    creditCardBankPayments: [],
     userProfile: initialUserProfile,
     securitySettings: initialSecuritySettings,
   };
+}
+
+function safeJsonParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed === null || parsed === undefined ? fallback : (parsed as T);
+  } catch (e) {
+    console.warn('Corrupted storage entry recovered with fallback:', e);
+    return fallback;
+  }
 }
 
 export const StorageService = {
@@ -77,6 +97,9 @@ export const StorageService = {
         salaryStr,
         friendsStr,
         friendEntriesStr,
+        ccMembersStr,
+        ccEntriesStr,
+        ccBankPaymentsStr,
         profileStr,
         securityStr,
       ] = await Promise.all([
@@ -86,52 +109,61 @@ export const StorageService = {
         AsyncStorage.getItem(STORAGE_KEYS.SALARY_CONFIG),
         AsyncStorage.getItem(STORAGE_KEYS.FRIENDS),
         AsyncStorage.getItem(STORAGE_KEYS.FRIEND_ENTRIES),
+        AsyncStorage.getItem(STORAGE_KEYS.CREDIT_CARD_MEMBERS),
+        AsyncStorage.getItem(STORAGE_KEYS.CREDIT_CARD_ENTRIES),
+        AsyncStorage.getItem(STORAGE_KEYS.CREDIT_CARD_BANK_PAYMENTS),
         AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE),
         AsyncStorage.getItem(STORAGE_KEYS.SECURITY_SETTINGS),
       ]);
 
-      const balance = balanceStr ? parseFloat(balanceStr) : 0;
-      const transactions = txsStr ? JSON.parse(txsStr) : [];
-      const bills = billsStr ? JSON.parse(billsStr) : [];
-      const salaryConfig = salaryStr
-        ? JSON.parse(salaryStr)
-        : { amount: 0, dayOfMonth: 1, autoPrompt: true };
-      const friends = friendsStr ? JSON.parse(friendsStr) : [];
-      const friendEntries = friendEntriesStr
-        ? JSON.parse(friendEntriesStr)
-        : [];
-      const userProfile: UserProfile = profileStr
-        ? JSON.parse(profileStr)
-        : {
-            name: 'John Doe',
-            email: 'john.doe@example.com',
-            phone: '',
-            avatarInitials: 'JD',
-            currency: 'PKR (Rs.)',
-            joinedDate: new Date().toISOString(),
-          };
-      const securitySettings: SecuritySettings = securityStr
-        ? JSON.parse(securityStr)
-        : {
-            pin: null,
-            isPinEnabled: false,
-            biometricsEnabled: false,
-          };
+      const defaults = getCleanInitialState();
+      const parsedBalance = balanceStr ? parseFloat(balanceStr) : 0;
+      const balance = Number.isFinite(parsedBalance) ? parsedBalance : 0;
+      const transactions = safeJsonParse<WalletTransaction[]>(txsStr, []);
+      const bills = safeJsonParse<Bill[]>(billsStr, []);
+      const salaryConfig = safeJsonParse<SalaryConfig>(
+        salaryStr,
+        defaults.salaryConfig
+      );
+      const friends = safeJsonParse<Friend[]>(friendsStr, []);
+      const friendEntries = safeJsonParse<FriendEntry[]>(friendEntriesStr, []);
+      const creditCardMembers = safeJsonParse<CreditCardMember[]>(
+        ccMembersStr,
+        []
+      );
+      const creditCardEntries = safeJsonParse<CreditCardLedgerEntry[]>(
+        ccEntriesStr,
+        []
+      );
+      const creditCardBankPayments = safeJsonParse<CreditCardBankPayment[]>(
+        ccBankPaymentsStr,
+        []
+      );
+      const userProfile = safeJsonParse<UserProfile>(
+        profileStr,
+        defaults.userProfile
+      );
+      const securitySettings = safeJsonParse<SecuritySettings>(
+        securityStr,
+        defaults.securitySettings
+      );
 
       // Security Migration: If legacy plaintext PIN exists in AsyncStorage, migrate to SecureStore and scrub
       if (securitySettings.pin) {
         await SecurityService.setPin(securitySettings.pin);
         securitySettings.pin = null;
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.SECURITY_SETTINGS,
-          JSON.stringify(securitySettings)
-        );
+        await this.saveSecuritySettings(securitySettings);
       }
 
       // Check whether a PIN is actually enrolled in SecureStore
       const hasSecurePin = await SecurityService.hasPin();
-      if (!hasSecurePin && securitySettings.isPinEnabled) {
+      if (
+        !hasSecurePin &&
+        (securitySettings.isPinEnabled || securitySettings.biometricsEnabled)
+      ) {
         securitySettings.isPinEnabled = false;
+        securitySettings.biometricsEnabled = false;
+        await this.saveSecuritySettings(securitySettings);
       }
 
       return {
@@ -141,6 +173,9 @@ export const StorageService = {
         salaryConfig,
         friends,
         friendEntries,
+        creditCardMembers,
+        creditCardEntries,
+        creditCardBankPayments,
         userProfile,
         securitySettings,
       };
@@ -210,6 +245,41 @@ export const StorageService = {
     }
   },
 
+  async saveCreditCardMembers(members: CreditCardMember[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.CREDIT_CARD_MEMBERS,
+        JSON.stringify(members)
+      );
+    } catch (e) {
+      console.error('Error saving credit card members:', e);
+    }
+  },
+
+  async saveCreditCardEntries(entries: CreditCardLedgerEntry[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.CREDIT_CARD_ENTRIES,
+        JSON.stringify(entries)
+      );
+    } catch (e) {
+      console.error('Error saving credit card entries:', e);
+    }
+  },
+
+  async saveCreditCardBankPayments(
+    payments: CreditCardBankPayment[]
+  ): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.CREDIT_CARD_BANK_PAYMENTS,
+        JSON.stringify(payments)
+      );
+    } catch (e) {
+      console.error('Error saving credit card bank payments:', e);
+    }
+  },
+
   async saveUserProfile(profile: UserProfile): Promise<void> {
     try {
       await AsyncStorage.setItem(
@@ -245,6 +315,9 @@ export const StorageService = {
       this.saveSalaryConfig(state.salaryConfig),
       this.saveFriends(state.friends),
       this.saveFriendEntries(state.friendEntries),
+      this.saveCreditCardMembers(state.creditCardMembers),
+      this.saveCreditCardEntries(state.creditCardEntries),
+      this.saveCreditCardBankPayments(state.creditCardBankPayments),
       this.saveUserProfile(state.userProfile),
       this.saveSecuritySettings(state.securitySettings),
     ]);
@@ -267,8 +340,13 @@ export const StorageService = {
     }
   },
 
-  async resetToDefaults(): Promise<Omit<WalletState, 'isLoaded'>> {
+  async resetToDefaults(
+    preserveProfile?: UserProfile
+  ): Promise<Omit<WalletState, 'isLoaded'>> {
     const cleanState = getCleanInitialState();
+    if (preserveProfile) {
+      cleanState.userProfile = preserveProfile;
+    }
     await this.saveAllState(cleanState);
     return cleanState;
   },

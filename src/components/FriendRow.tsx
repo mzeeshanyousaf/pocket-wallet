@@ -3,7 +3,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { Friend, FriendEntry } from '../types';
-import { formatRs } from '../utils/formatters';
+import { formatRs, getDaysUntil, parseDate } from '../utils/formatters';
 
 interface FriendRowProps {
   friend: Friend;
@@ -23,27 +23,24 @@ export const FriendRow: React.FC<FriendRowProps> = ({
   let nextDueDate: string | null = null;
   if (pendingEntries.length > 0) {
     const sorted = [...pendingEntries].sort(
-      (a, b) => new Date(a.recoveryDate).getTime() - new Date(b.recoveryDate).getTime()
+      (a, b) =>
+        parseDate(a.recoveryDate).getTime() -
+        parseDate(b.recoveryDate).getTime()
     );
     nextDueDate = sorted[0].recoveryDate;
   }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
   let subText = 'All settled';
   let subColor = colors.muted;
 
   if (net !== 0) {
     if (nextDueDate) {
-      const due = new Date(nextDueDate);
-      due.setHours(0, 0, 0, 0);
-      const diff = Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const { days: diff, isPast, isToday } = getDaysUntil(nextDueDate);
 
-      if (diff < 0) {
+      if (isPast) {
         subText = `${net > 0 ? 'Recovery' : 'Repayment'} overdue · ${Math.abs(diff)}d`;
         subColor = colors.neg;
-      } else if (diff === 0) {
+      } else if (isToday) {
         subText = 'Due today';
         subColor = colors.warn;
       } else {

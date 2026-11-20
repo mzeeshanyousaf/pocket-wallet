@@ -60,16 +60,27 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const { height: windowHeight } = useWindowDimensions();
   const dynamicMaxHeight = Math.min(windowHeight * 0.88, 700);
 
-  const [entryType, setEntryType] = useState<'expense' | 'income'>(defaultType);
+  const [draftType, setDraftType] = useState<'expense' | 'income' | null>(null);
   const [amountStr, setAmountStr] = useState('');
-  const [category, setCategory] = useState<string>('Food');
+  const [draftCategory, setDraftCategory] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleShow = () => {
-    setEntryType(defaultType);
-    setCategory(defaultType === 'income' ? 'Salary' : 'Food');
+  const entryType = draftType ?? defaultType;
+  const category =
+    draftCategory ?? (entryType === 'income' ? 'Salary' : 'Food');
+
+  const resetForm = () => {
+    setDraftType(null);
+    setDraftCategory(null);
     setAmountStr('');
     setNote('');
+    setIsSubmitting(false);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
   };
 
   const numAmount = parseFloat(amountStr) || 0;
@@ -78,21 +89,26 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
   const categoriesList = isOut ? expenseCategories : incomeCategories;
 
   const handleSwitchType = (type: 'expense' | 'income') => {
-    setEntryType(type);
-    setCategory(type === 'income' ? 'Salary' : 'Food');
+    setDraftType(type);
+    setDraftCategory(type === 'income' ? 'Salary' : 'Food');
   };
 
   const handleSubmit = async () => {
-    if (numAmount <= 0) return;
+    if (numAmount <= 0 || isSubmitting) return;
     const finalDescription = note.trim() || category;
 
-    if (entryType === 'income') {
-      await addIncome(finalDescription, numAmount, category);
-    } else {
-      await addExpense(finalDescription, numAmount, category);
-    }
+    setIsSubmitting(true);
+    try {
+      if (entryType === 'income') {
+        await addIncome(finalDescription, numAmount, category);
+      } else {
+        await addExpense(finalDescription, numAmount, category);
+      }
 
-    onClose();
+      handleClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -100,15 +116,15 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
-      onShow={handleShow}
+      onShow={resetForm}
+      onRequestClose={handleClose}
       statusBarTranslucent
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidRoot}
       >
-        <TouchableWithoutFeedback onPress={onClose}>
+        <TouchableWithoutFeedback onPress={handleClose}>
           <View style={styles.backdrop}>
             <TouchableWithoutFeedback>
               <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
@@ -119,7 +135,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                 <View style={styles.titleRow}>
                   <Text style={styles.sheetTitle}>New entry</Text>
                   <TouchableOpacity
-                    onPress={onClose}
+                    onPress={handleClose}
                     style={styles.closeBtn}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
@@ -185,6 +201,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                         placeholder="0"
                         placeholderTextColor={colors.line}
                         keyboardType="numeric"
+                        maxLength={10}
                         value={amountStr}
                         onChangeText={(txt) => setAmountStr(txt.replace(/[^0-9]/g, ''))}
                         autoFocus
@@ -214,7 +231,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                               styles.catTile,
                               isSelected && styles.catTileActive,
                             ]}
-                            onPress={() => setCategory(cat.id)}
+                            onPress={() => setDraftCategory(cat.id)}
                             activeOpacity={0.8}
                           >
                             <MaterialIcons
@@ -262,7 +279,7 @@ export const QuickEntryModal: React.FC<QuickEntryModalProps> = ({
                             : colors.line,
                       },
                     ]}
-                    disabled={numAmount <= 0}
+                    disabled={numAmount <= 0 || isSubmitting}
                     onPress={handleSubmit}
                     activeOpacity={0.88}
                   >

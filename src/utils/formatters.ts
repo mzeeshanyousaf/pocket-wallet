@@ -1,22 +1,99 @@
+import type { WalletTransaction } from '../types';
+
 export function formatRs(
   amount: number,
   options?: { showSign?: boolean; prefix?: string }
 ): string {
   const prefix = options?.prefix ?? 'Rs. ';
-  const absAmount = Math.abs(Math.round(amount || 0));
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  const rounded = Math.round(safeAmount);
+  const absAmount = Math.abs(rounded);
   const formattedNumber = absAmount
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
   if (options?.showSign) {
-    if (amount > 0) {
+    if (rounded > 0) {
       return `+${prefix}${formattedNumber}`;
-    } else if (amount < 0) {
+    } else if (rounded < 0) {
       return `-${prefix}${formattedNumber}`;
     }
+    return `${prefix}${formattedNumber}`;
+  }
+
+  if (rounded < 0) {
+    return `-${prefix}${formattedNumber}`;
   }
 
   return `${prefix}${formattedNumber}`;
+}
+
+export function isInflowTransaction(tx: WalletTransaction): boolean {
+  return (
+    tx.type === 'income' ||
+    tx.type === 'salary' ||
+    tx.type === 'friend_borrowed' ||
+    (tx.type === 'friend_settlement' && tx.settlementType === 'received_back')
+  );
+}
+
+export function createUniqueId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function getOrdinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = Math.abs(Math.trunc(n)) % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+export function getDaysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+export function getEffectivePayday(
+  year: number,
+  monthIndex: number,
+  dayOfMonth: number
+): number {
+  return Math.min(Math.max(1, dayOfMonth), getDaysInMonth(year, monthIndex));
+}
+
+export function getDaysUntilSalary(
+  dayOfMonth: number,
+  now: Date = new Date()
+): number {
+  const todayMidnight = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+  const thisMonthPayday = getEffectivePayday(
+    now.getFullYear(),
+    now.getMonth(),
+    dayOfMonth
+  );
+
+  let targetDate: Date;
+  if (thisMonthPayday >= now.getDate()) {
+    targetDate = new Date(now.getFullYear(), now.getMonth(), thisMonthPayday);
+  } else {
+    let nextMonth = now.getMonth() + 1;
+    let nextYear = now.getFullYear();
+    if (nextMonth > 11) {
+      nextMonth = 0;
+      nextYear += 1;
+    }
+    const nextMonthPayday = getEffectivePayday(
+      nextYear,
+      nextMonth,
+      dayOfMonth
+    );
+    targetDate = new Date(nextYear, nextMonth, nextMonthPayday);
+  }
+
+  const diffTime = targetDate.getTime() - todayMidnight.getTime();
+  return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
 export function toDateString(date: Date = new Date()): string {
@@ -145,6 +222,15 @@ export function formatBillFrequency(
   }
 }
 
+function addMonthsClamped(date: Date, monthsToAdd: number): Date {
+  const totalMonths = date.getFullYear() * 12 + date.getMonth() + monthsToAdd;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonth = totalMonths % 12;
+  const maxDay = getDaysInMonth(targetYear, targetMonth);
+  const clampedDay = Math.min(date.getDate(), maxDay);
+  return new Date(targetYear, targetMonth, clampedDay, 12, 0, 0);
+}
+
 export function calculateNextDueDate(
   currentDueDate: string,
   frequency?: string,
@@ -156,21 +242,17 @@ export function calculateNextDueDate(
   switch (frequency) {
     case 'weekly':
       date.setDate(date.getDate() + 7);
-      break;
+      return toDateString(date);
     case 'custom_days':
       date.setDate(date.getDate() + (frequencyDays > 0 ? frequencyDays : 6));
-      break;
+      return toDateString(date);
     case 'quarterly':
-      date.setMonth(date.getMonth() + 3);
-      break;
+      return toDateString(addMonthsClamped(date, 3));
     case 'yearly':
-      date.setFullYear(date.getFullYear() + 1);
-      break;
+      return toDateString(addMonthsClamped(date, 12));
     case 'monthly':
     default:
-      date.setMonth(date.getMonth() + 1);
-      break;
+      return toDateString(addMonthsClamped(date, 1));
   }
-  return toDateString(date);
 }
 

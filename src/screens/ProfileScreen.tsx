@@ -20,9 +20,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useWallet } from '../context/WalletContext';
+import { BackupService, BackupSummary } from '../services/backup';
 import { SecurityService } from '../services/security';
 import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
+import { WalletBackupPayload } from '../types';
+import { formatDateDisplay } from '../utils/formatters';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface ProfileScreenProps {
   navigation: any;
@@ -31,11 +36,22 @@ interface ProfileScreenProps {
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const {
+    balance,
+    transactions,
+    bills,
+    salaryConfig,
+    friends,
+    friendEntries,
+    creditCardMembers,
+    creditCardEntries,
+    creditCardBankPayments,
     userProfile,
     securitySettings,
     updateUserProfile,
     updateSecuritySettings,
     resetAllData,
+    importBackupData,
+    setSuppressAutoLock,
   } = useWallet();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -54,7 +70,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
   const [confirmPin, setConfirmPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
 
-  // Confirm modals
+  // Confirm modals & backup state
+  const [isBackupBusy, setIsBackupBusy] = useState(false);
+  const [pendingRestore, setPendingRestore] = useState<{
+    fileName: string;
+    payload: WalletBackupPayload;
+    summary: BackupSummary;
+  } | null>(null);
   const [showDisablePinConfirm, setShowDisablePinConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [alertInfo, setAlertInfo] = useState<{
@@ -95,7 +117,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
       setProfileError('Please enter your name.');
       return;
     }
-    if (!email.trim() || !email.includes('@')) {
+    if (!EMAIL_REGEX.test(email.trim())) {
       setProfileError('Please enter a valid email address.');
       return;
     }
@@ -138,6 +160,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         return;
       }
 
+      setSuppressAutoLock(true);
       try {
         const result = await LocalAuthentication.authenticateAsync({
           promptMessage: `Verify ${biometricName} to enable unlock`,
@@ -157,6 +180,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         }
       } catch (err) {
         console.log('Biometric verification error:', err);
+      } finally {
+        setTimeout(() => {
+          setSuppressAutoLock(false);
+        }, 300);
       }
     } else {
       await updateSecuritySettings({ biometricsEnabled: false });
@@ -194,6 +221,71 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
 
   const handleResetData = () => {
     setShowResetConfirm(true);
+  };
+
+  const handleExportBackup = async () => {
+    if (isBackupBusy) return;
+    setIsBackupBusy(true);
+    setSuppressAutoLock(true);
+    try {
+      const { fileName } = await BackupService.exportBackup({
+        balance,
+        transactions,
+        bills,
+        salaryConfig,
+        friends,
+        friendEntries,
+        creditCardMembers,
+        creditCardEntries,
+        creditCardBankPayments,
+        userProfile,
+      });
+      setAlertInfo({
+        visible: true,
+        title: 'Backup Ready',
+        message: `Saved backup as ${fileName}. Store it somewhere safe (Files, Drive, or WhatsApp self-chat).`,
+        icon: 'check-circle',
+        type: 'info',
+      });
+    } catch (err: any) {
+      setAlertInfo({
+        visible: true,
+        title: 'Export Failed',
+        message: err?.message || 'Could not export backup file.',
+        icon: 'error-outline',
+        type: 'danger',
+      });
+    } finally {
+      setIsBackupBusy(false);
+      setTimeout(() => {
+        setSuppressAutoLock(false);
+      }, 400);
+    }
+  };
+
+  const handlePickRestoreBackup = async () => {
+    if (isBackupBusy) return;
+    setIsBackupBusy(true);
+    setSuppressAutoLock(true);
+    try {
+      const picked = await BackupService.pickAndReadBackup();
+      if (picked) {
+        setPendingRestore(picked);
+      }
+    } catch (err: any) {
+      setAlertInfo({
+        visible: true,
+        title: 'Invalid Backup',
+        message: err?.message || 'Could not read the selected backup file.',
+        icon: 'error-outline',
+        type: 'danger',
+      });
+    } finally {
+      setIsBackupBusy(false);
+      setTimeout(() => {
+        setSuppressAutoLock(false);
+      }, 400);
+    }
   };
 
   return (
@@ -237,6 +329,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
           <Text style={styles.sectionTitle}>Profile details</Text>
           <TouchableOpacity
             onPress={() => {
+              setProfileError(null);
               if (isEditing) {
                 // cancel
                 setName(userProfile.name);
@@ -244,6 +337,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 setPhone(userProfile.phone || '');
                 setIsEditing(false);
               } else {
+                setName(userProfile.name);
+                setEmail(userProfile.email);
+                setPhone(userProfile.phone || '');
                 setIsEditing(true);
               }
             }}
@@ -358,6 +454,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                 onPress={() => {
                   setNewPin('');
                   setConfirmPin('');
+                  setPinError(null);
                   setShowPinModal(true);
                 }}
               >
@@ -406,6 +503,44 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         {/* Section: Data & Backup */}
         <Text style={styles.sectionTitle}>Data management</Text>
         <View style={styles.settingsGroupCard}>
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handleExportBackup}
+            disabled={isBackupBusy}
+          >
+            <View style={[styles.settingIconBox, { backgroundColor: colors.brandSoft }]}>
+              <MaterialIcons name="file-upload" size={20} color={colors.brand} />
+            </View>
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.actionRowText}>Export backup (JSON)</Text>
+              <Text style={styles.settingSubtitle}>
+                Save all wallet, bills, friends &amp; card ledgers
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={20} color={colors.subtle} />
+          </TouchableOpacity>
+
+          <View style={styles.separator} />
+
+          <TouchableOpacity
+            style={styles.actionRow}
+            onPress={handlePickRestoreBackup}
+            disabled={isBackupBusy}
+          >
+            <View style={[styles.settingIconBox, { backgroundColor: colors.accentBlueMuted }]}>
+              <MaterialIcons name="restore" size={20} color={colors.accentBlue} />
+            </View>
+            <View style={styles.settingTextContainer}>
+              <Text style={styles.actionRowText}>Restore from backup</Text>
+              <Text style={styles.settingSubtitle}>
+                Import a previously exported .json backup
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={20} color={colors.subtle} />
+          </TouchableOpacity>
+
+          <View style={styles.separator} />
+
           <TouchableOpacity style={styles.actionRow} onPress={handleResetData}>
             <View style={[styles.settingIconBox, { backgroundColor: colors.negSoft }]}>
               <MaterialIcons name="delete-sweep" size={20} color={colors.neg} />
@@ -427,7 +562,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
             style={styles.footerLogo}
             resizeMode="contain"
           />
-          <Text style={styles.versionText}>Pocket Wallet v1.0.0</Text>
+          <Text style={styles.versionText}>Pocket Wallet v1.1.0</Text>
           <TouchableOpacity
             onPress={() => Linking.openURL('https://mzeeshanyousaf.github.io').catch((e) => console.log('Cannot open URL', e))}
             activeOpacity={0.7}
@@ -460,7 +595,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
                   <View style={styles.dragHandle} />
                   <View style={styles.pinModalHeader}>
                     <Text style={styles.pinModalTitle}>
-                      {securitySettings.pin ? 'Change 4-digit PIN' : 'Set up 4-digit PIN'}
+                      {securitySettings.isPinEnabled ? 'Change 4-digit PIN' : 'Set up 4-digit PIN'}
                     </Text>
                     <Text style={styles.pinModalSubtitle}>
                       This PIN will be required every time you open Pocket Wallet.
@@ -554,6 +689,35 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         onCancel={() => setShowDisablePinConfirm(false)}
       />
 
+      {/* Restore Backup Confirmation */}
+      <ConfirmModal
+        visible={pendingRestore !== null}
+        title="Restore Backup?"
+        message={
+          pendingRestore
+            ? `File: ${pendingRestore.fileName}\nExported: ${formatDateDisplay(pendingRestore.summary.exportedAt)}\n\nContains ${pendingRestore.summary.transactions} transactions, ${pendingRestore.summary.bills} bills, ${pendingRestore.summary.friends} friends, and ${pendingRestore.summary.cardMembers} card contacts.\n\nThis will replace all current wallet data (your PIN lock stays unchanged).`
+            : ''
+        }
+        confirmText="Restore Data"
+        cancelText="Cancel"
+        type="warning"
+        icon="restore"
+        onConfirm={async () => {
+          if (!pendingRestore) return;
+          const target = pendingRestore;
+          setPendingRestore(null);
+          await importBackupData(target.payload);
+          setAlertInfo({
+            visible: true,
+            title: 'Backup Restored',
+            message: 'Your Pocket Wallet data has been restored successfully.',
+            icon: 'check-circle',
+            type: 'info',
+          });
+        }}
+        onCancel={() => setPendingRestore(null)}
+      />
+
       {/* Wipe All Data Confirmation */}
       <ConfirmModal
         visible={showResetConfirm}
@@ -566,9 +730,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ navigation }) => {
         onConfirm={async () => {
           setShowResetConfirm(false);
           await resetAllData();
-          setName('John Doe');
-          setEmail('john.doe@example.com');
-          setPhone('');
           setAlertInfo({
             visible: true,
             title: 'Data Wiped',

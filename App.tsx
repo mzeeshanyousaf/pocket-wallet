@@ -1,24 +1,26 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer } from '@react-navigation/native';
-import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
+  NavigationContainer,
+  useNavigationContainerRef,
+} from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
+import { StatusBar } from 'expo-status-bar';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
   AppState,
   Image,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWallet, WalletProvider } from './src/context/WalletContext';
 import { AboutScreen } from './src/screens/AboutScreen';
 import { BillsSalaryScreen } from './src/screens/BillsSalaryScreen';
+import { CreditCardLedgerScreen } from './src/screens/CreditCardLedgerScreen';
 import { FriendsLedgerScreen } from './src/screens/FriendsLedgerScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { PinLockScreen } from './src/screens/PinLockScreen';
@@ -26,36 +28,39 @@ import { ProfileScreen } from './src/screens/ProfileScreen';
 import { WelcomeOnboardingScreen } from './src/screens/WelcomeOnboardingScreen';
 import { StorageService } from './src/services/storage';
 import { colors } from './src/theme/colors';
+import { getDaysUntil, isDueTodayOrPast } from './src/utils/formatters';
 
-const Tab = createBottomTabNavigator();
+type RootTabParamList = {
+  Home: undefined;
+  'Bills & Salary': undefined;
+  'Credit Card': undefined;
+  'Give & Take': undefined;
+  Profile: undefined;
+  About: undefined;
+};
 
-function MainTabs({ navigation }: { navigation?: any }) {
+const Tab = createBottomTabNavigator<RootTabParamList>();
+
+function MainTabs() {
   const insets = useSafeAreaInsets();
   const { bills, friendEntries } = useWallet();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const billsBadge = bills.filter(
+    (b) => !b.isPaid && isDueTodayOrPast(b.dueDate)
+  ).length;
 
-  const billsBadge = bills.filter((b) => {
-    if (b.isPaid) return false;
-    const due = new Date(b.dueDate);
-    due.setHours(0, 0, 0, 0);
-    return due.getTime() <= today.getTime();
-  }).length;
-
-  const friendsBadge = friendEntries.filter((e) => {
-    if (e.isSettled) return false;
-    const rec = new Date(e.recoveryDate);
-    rec.setHours(0, 0, 0, 0);
-    return rec.getTime() < today.getTime();
-  }).length;
+  const friendsBadge = friendEntries.filter(
+    (e) => !e.isSettled && getDaysUntil(e.recoveryDate).isPast
+  ).length;
 
   // Safe bottom padding for both modern gesture navigation and 3-button hardware/soft keys
-  const bottomInset = insets.bottom > 0 ? insets.bottom : (Platform.OS === 'android' ? 8 : 12);
+  const bottomInset =
+    insets.bottom > 0 ? insets.bottom : Platform.OS === 'android' ? 8 : 12;
   const barHeight = 58 + bottomInset;
 
   return (
     <Tab.Navigator
+      backBehavior="history"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
@@ -89,7 +94,15 @@ function MainTabs({ navigation }: { navigation?: any }) {
           paddingVertical: 2,
         },
         tabBarButton: (props) => {
-          const { children, style, onPress, onLongPress, accessibilityState, accessibilityLabel, testID } = props;
+          const {
+            children,
+            style,
+            onPress,
+            onLongPress,
+            accessibilityState,
+            accessibilityLabel,
+            testID,
+          } = props;
           return (
             <Pressable
               onPress={onPress}
@@ -121,7 +134,8 @@ function MainTabs({ navigation }: { navigation?: any }) {
           width: '100%',
         },
         tabBarIcon: ({ focused }) => {
-          let iconName: keyof typeof MaterialIcons.glyphMap = 'account-balance-wallet';
+          let iconName: keyof typeof MaterialIcons.glyphMap =
+            'account-balance-wallet';
           let badgeCount = 0;
 
           if (route.name === 'Home') {
@@ -129,6 +143,8 @@ function MainTabs({ navigation }: { navigation?: any }) {
           } else if (route.name === 'Bills & Salary') {
             iconName = 'receipt-long';
             badgeCount = billsBadge;
+          } else if (route.name === 'Credit Card') {
+            iconName = 'credit-card';
           } else if (route.name === 'Give & Take') {
             iconName = 'group';
             badgeCount = friendsBadge;
@@ -137,7 +153,9 @@ function MainTabs({ navigation }: { navigation?: any }) {
           }
 
           return (
-            <View style={[styles.tabIconPill, focused && styles.tabIconPillActive]}>
+            <View
+              style={[styles.tabIconPill, focused && styles.tabIconPillActive]}
+            >
               <MaterialIcons
                 name={iconName}
                 size={20}
@@ -164,6 +182,11 @@ function MainTabs({ navigation }: { navigation?: any }) {
         options={{ tabBarLabel: 'Bills' }}
       />
       <Tab.Screen
+        name="Credit Card"
+        component={CreditCardLedgerScreen}
+        options={{ tabBarLabel: 'Card' }}
+      />
+      <Tab.Screen
         name="Give & Take"
         component={FriendsLedgerScreen}
         options={{ tabBarLabel: 'Friends' }}
@@ -184,81 +207,22 @@ function MainTabs({ navigation }: { navigation?: any }) {
   );
 }
 
-/**
- * Branded Welcome Splash Screen displayed on app startup / reload
- * Uses native Modal with statusBarTranslucent so it renders directly on top of
- * any native screen hierarchies on both Android and iOS without zIndex conflicts.
- */
-function WelcomeSplashScreen({ onFinish }: { onFinish: () => void }) {
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }).start(() => {
-        onFinish();
-      });
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [fadeAnim, onFinish]);
-
-  const handleSkip = () => {
-    Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      onFinish();
-    });
-  };
-
-  return (
-    <Modal
-      visible={true}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={handleSkip}
-    >
-      <Animated.View style={[styles.welcomeModalOverlay, { opacity: fadeAnim }]}>
-        <StatusBar style="light" />
-        <View style={styles.splashBrandContainer}>
-          <Image
-            source={require('./assets/logos/logo_mark_symbol_1024x1024.png')}
-            style={styles.splashMarkSymbol}
-            resizeMode="contain"
-          />
-          <Image
-            source={require('./assets/logos/logo_horizontal_dark_mode.png')}
-            style={styles.splashHorizontalLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.splashTagline}>Smart Cashflow & Giving Ledger</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.skipWelcomeBtn}
-          onPress={handleSkip}
-          activeOpacity={0.7}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <View style={styles.skipPill}>
-            <MaterialIcons name="arrow-forward" size={14} color="#8E9AA6" />
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
-    </Modal>
-  );
-}
-
 function AppContent() {
-  const { isLoaded, isUnlocked, unlockApp, lockApp, securitySettings } = useWallet();
+  const {
+    isLoaded,
+    isUnlocked,
+    unlockApp,
+    lockApp,
+    securitySettings,
+    isAutoLockSuppressed,
+  } = useWallet();
   const [isOnboarded, setIsOnboarded] = useState<boolean | null>(null);
   const [isBackgrounded, setIsBackgrounded] = useState(false);
   const appStateRef = useRef<string>('active');
+  const navigationRef = useNavigationContainerRef<RootTabParamList>();
+  const pendingNotificationTabRef = useRef<
+    'Bills & Salary' | 'Give & Take' | null
+  >(null);
 
   useEffect(() => {
     (async () => {
@@ -267,25 +231,87 @@ function AppContent() {
     })();
   }, []);
 
-  // Lock the app and shield screen when it goes to background / app switcher
+  const flushPendingNotificationRoute = useCallback(() => {
+    const targetTab = pendingNotificationTabRef.current;
+    if (!targetTab || !isUnlocked || !navigationRef.isReady()) return;
+
+    pendingNotificationTabRef.current = null;
+    navigationRef.navigate(targetTab);
+    if (Platform.OS !== 'web') {
+      try {
+        Notifications.clearLastNotificationResponse();
+      } catch {
+        // Ignore if unavailable
+      }
+    }
+  }, [isUnlocked, navigationRef]);
+
+  const handleNotificationResponse = useCallback(
+    (response: Notifications.NotificationResponse | null | undefined) => {
+      if (!response) return;
+      const dataType = response.notification?.request?.content?.data?.type;
+      let targetTab: 'Bills & Salary' | 'Give & Take' | null = null;
+      if (dataType === 'bill' || dataType === 'salary') {
+        targetTab = 'Bills & Salary';
+      } else if (dataType === 'friend_recovery') {
+        targetTab = 'Give & Take';
+      }
+      if (!targetTab) return;
+
+      pendingNotificationTabRef.current = targetTab;
+      flushPendingNotificationRoute();
+    },
+    [flushPendingNotificationRoute]
+  );
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    try {
+      const lastResponse = Notifications.getLastNotificationResponse();
+      if (lastResponse) {
+        handleNotificationResponse(lastResponse);
+      }
+    } catch {
+      // Ignore on unsupported runtimes
+    }
+
+    const subscription =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        handleNotificationResponse(response);
+      });
+
+    return () => subscription.remove();
+  }, [handleNotificationResponse]);
+
+  useEffect(() => {
+    flushPendingNotificationRoute();
+  }, [isUnlocked, flushPendingNotificationRoute]);
+
+  // Lock the app on background and shield screen on inactive/background (respecting system biometric prompts)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const isLockEnabled =
         securitySettings.isPinEnabled || securitySettings.biometricsEnabled;
+      const suppressed = isAutoLockSuppressed();
 
-      const goingInactive = nextState === 'background' || nextState === 'inactive';
-      setIsBackgrounded(goingInactive);
+      const goingInactive =
+        nextState === 'background' || nextState === 'inactive';
+      setIsBackgrounded(goingInactive && !suppressed);
 
-      if (isLockEnabled && goingInactive) {
-        if (appStateRef.current === 'active') {
-          lockApp();
-        }
+      if (
+        isLockEnabled &&
+        nextState === 'background' &&
+        !suppressed &&
+        appStateRef.current !== 'background'
+      ) {
+        lockApp();
       }
       appStateRef.current = nextState;
     });
 
     return () => subscription.remove();
-  }, [securitySettings, lockApp]);
+  }, [securitySettings, lockApp, isAutoLockSuppressed]);
 
   const handleCompleteOnboarding = async () => {
     await StorageService.setOnboarded();
@@ -316,7 +342,8 @@ function AppContent() {
   }
 
   // 3. PIN / Biometric Lock Screen (if lock is enabled and app is locked)
-  const isLockEnabled = securitySettings.isPinEnabled || securitySettings.biometricsEnabled;
+  const isLockEnabled =
+    securitySettings.isPinEnabled || securitySettings.biometricsEnabled;
   if (isLockEnabled && !isUnlocked) {
     return (
       <View style={styles.appContainer}>
@@ -330,7 +357,9 @@ function AppContent() {
               style={styles.loadingLogo}
               resizeMode="contain"
             />
-            <Text style={styles.privacyShieldText}>Pocket Wallet is Locked</Text>
+            <Text style={styles.privacyShieldText}>
+              Pocket Wallet is Locked
+            </Text>
           </View>
         )}
       </View>
@@ -340,7 +369,10 @@ function AppContent() {
   // 4. Main Authenticated Application
   return (
     <View style={styles.appContainer}>
-      <NavigationContainer>
+      <NavigationContainer
+        ref={navigationRef}
+        onReady={flushPendingNotificationRoute}
+      >
         <StatusBar style="dark" />
         <MainTabs />
       </NavigationContainer>
@@ -400,35 +432,8 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
   },
-  tabBar: {
-    backgroundColor: colors.surface,
-    borderTopColor: colors.line,
-    borderTopWidth: 1,
-    paddingTop: 6,
-    elevation: 8,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  tabBarLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  tabBarItem: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 2,
-    flex: 1,
-  },
-  tabBarIcon: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   tabIconPill: {
-    width: 48,
+    width: 44,
     height: 30,
     borderRadius: 15,
     alignItems: 'center',
@@ -455,49 +460,5 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '700',
     color: '#FFFFFF',
-  },
-  welcomeModalOverlay: {
-    flex: 1,
-    backgroundColor: '#0B0F19',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  splashBrandContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  splashMarkSymbol: {
-    width: 96,
-    height: 96,
-    marginBottom: 16,
-  },
-  splashHorizontalLogo: {
-    width: 220,
-    height: 56,
-    marginBottom: 8,
-  },
-  splashTagline: {
-    fontSize: 13,
-    color: '#8E9AA6',
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  skipWelcomeBtn: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 52 : 36,
-    right: 20,
-    zIndex: 10,
-  },
-  skipPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

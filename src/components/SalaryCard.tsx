@@ -1,9 +1,10 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/tokens';
+import { getDaysUntilSalary, getOrdinal } from '../utils/formatters';
 
 interface SalaryCardProps {
   onConfigureSalary?: () => void;
@@ -11,32 +12,34 @@ interface SalaryCardProps {
 
 export const SalaryCard: React.FC<SalaryCardProps> = ({ onConfigureSalary }) => {
   const { salaryConfig, receiveSalary } = useWallet();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const today = new Date();
-  const currentDay = today.getDate();
-  const daysUntilSalary =
-    salaryConfig.dayOfMonth >= currentDay
-      ? salaryConfig.dayOfMonth - currentDay
-      : 30 - (currentDay - salaryConfig.dayOfMonth);
+  const hasSalaryConfigured = salaryConfig.amount > 0;
+  const daysUntilSalary = getDaysUntilSalary(salaryConfig.dayOfMonth, today);
 
   const currentMonthYear = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const isReceived = salaryConfig.lastCreditedMonthYear === currentMonthYear;
   const currentMonthName = today.toLocaleString('en-US', { month: 'long' });
 
-  const countdownText =
-    daysUntilSalary === 0
-      ? 'Payday today'
-      : `${daysUntilSalary} ${daysUntilSalary === 1 ? 'day' : 'days'} to payday`;
+  const countdownText = !hasSalaryConfigured
+    ? 'Not configured'
+    : daysUntilSalary === 0
+    ? 'Payday today'
+    : `${daysUntilSalary} ${daysUntilSalary === 1 ? 'day' : 'days'} to payday`;
 
   const handleReceiveSalary = async () => {
-    if (isReceived) return;
-    await receiveSalary();
-  };
-
-  const getOrdinal = (n: number) => {
-    const s = ['th', 'st', 'nd', 'rd'];
-    const v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+    if (!hasSalaryConfigured) {
+      onConfigureSalary?.();
+      return;
+    }
+    if (isReceived || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await receiveSalary();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -117,25 +120,43 @@ export const SalaryCard: React.FC<SalaryCardProps> = ({ onConfigureSalary }) => 
         style={[
           styles.ctaBtn,
           {
-            backgroundColor: isReceived ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+            backgroundColor:
+              hasSalaryConfigured && isReceived
+                ? 'rgba(255, 255, 255, 0.12)'
+                : '#FFFFFF',
           },
         ]}
         onPress={handleReceiveSalary}
-        disabled={isReceived}
+        disabled={(hasSalaryConfigured && isReceived) || isSubmitting}
         activeOpacity={0.88}
       >
         <MaterialIcons
-          name={isReceived ? 'check' : 'add'}
+          name={
+            !hasSalaryConfigured ? 'tune' : isReceived ? 'check' : 'add'
+          }
           size={18}
-          color={isReceived ? 'rgba(255, 255, 255, 0.60)' : colors.brand}
+          color={
+            hasSalaryConfigured && isReceived
+              ? 'rgba(255, 255, 255, 0.60)'
+              : colors.brand
+          }
         />
         <Text
           style={[
             styles.ctaBtnText,
-            { color: isReceived ? 'rgba(255, 255, 255, 0.60)' : colors.brand },
+            {
+              color:
+                hasSalaryConfigured && isReceived
+                  ? 'rgba(255, 255, 255, 0.60)'
+                  : colors.brand,
+            },
           ]}
         >
-          {isReceived ? 'Credited to wallet' : 'Receive salary now'}
+          {!hasSalaryConfigured
+            ? 'Set up monthly salary'
+            : isReceived
+            ? 'Credited to wallet'
+            : 'Receive salary now'}
         </Text>
       </TouchableOpacity>
     </View>

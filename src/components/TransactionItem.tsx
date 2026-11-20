@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { WalletTransaction } from '../types';
-import { formatRs, formatTimeDisplay } from '../utils/formatters';
+import { formatRs, formatTimeDisplay, isInflowTransaction } from '../utils/formatters';
 import { ConfirmModal } from './ConfirmModal';
 
 interface TransactionItemProps {
@@ -19,11 +19,7 @@ export const TransactionItem: React.FC<TransactionItemProps> = ({
 }) => {
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const isIn =
-    transaction.type === 'income' ||
-    transaction.type === 'salary' ||
-    (transaction.type === 'friend_settlement' &&
-      transaction.settlementType === 'received_back');
+  const isIn = isInflowTransaction(transaction);
 
   const getCategoryIcon = (): keyof typeof MaterialIcons.glyphMap => {
     const cat = (transaction.category || '').toLowerCase();

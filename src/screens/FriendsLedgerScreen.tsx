@@ -153,10 +153,6 @@ export const FriendsLedgerScreen: React.FC = () => {
           visible={!!selectedFriendForDetail}
           friend={selectedFriendForDetail}
           onClose={() => setSelectedFriendForDetail(null)}
-          onAddNewEntry={() => {
-            setSelectedFriendForDetail(null);
-            setShowAddEntryModal(true);
-          }}
         />
       )}
     </View>

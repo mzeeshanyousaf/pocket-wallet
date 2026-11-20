@@ -5,6 +5,7 @@ import {
   Modal,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -16,14 +17,19 @@ import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
 import { Friend } from '../types';
-import { formatDateDisplay, formatRs } from '../utils/formatters';
+import {
+  formatDateDisplay,
+  formatRs,
+  parseDate,
+  toDateString,
+} from '../utils/formatters';
+import { formatFriendStatement } from '../utils/statementFormatter';
 import { ConfirmModal } from './ConfirmModal';
 
 interface FriendDetailModalProps {
   visible: boolean;
   friend: Friend | null;
   onClose: () => void;
-  onAddNewEntry?: (friendName: string) => void;
 }
 
 export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
@@ -32,22 +38,47 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
   onClose,
 }) => {
   const insets = useSafeAreaInsets();
-  const { friendEntries, settleFriendEntry, addFriendEntry, deleteFriendEntry, deleteFriend } = useWallet();
+  const {
+    friends,
+    friendEntries,
+    settleAllFriendEntries,
+    recordFriendRepayment,
+    addFriendEntry,
+    deleteFriendEntry,
+    deleteFriend,
+    setSuppressAutoLock,
+  } = useWallet();
 
   const [amountStr, setAmountStr] = useState('');
   const [noteStr, setNoteStr] = useState('');
   const [showSettleConfirm, setShowSettleConfirm] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [showDeleteFriendConfirm, setShowDeleteFriendConfirm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const resetTransientState = () => {
+    setAmountStr('');
+    setNoteStr('');
+    setShowSettleConfirm(false);
+    setDeletingEntryId(null);
+    setShowDeleteFriendConfirm(false);
+    setIsSubmitting(false);
+  };
+
+  const handleClose = () => {
+    resetTransientState();
+    onClose();
+  };
 
   if (!friend) return null;
 
-  const net = friend.netBalance;
-  const firstName = friend.name.split(' ')[0];
+  const liveFriend = friends.find((f) => f.id === friend.id) ?? friend;
+  const net = liveFriend.netBalance;
+  const firstName = liveFriend.name.split(' ')[0];
 
   const thisFriendEntries = friendEntries
-    .filter((e) => e.friendId === friend.id)
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    .filter((e) => e.friendId === liveFriend.id)
+    .sort((a, b) => parseDate(b.date).getTime() - parseDate(a.date).getTime());
 
   const pendingEntries = thisFriendEntries.filter((e) => !e.isSettled);
 
@@ -55,7 +86,9 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
   let nextRecoveryDate: string | null = null;
   if (pendingEntries.length > 0) {
     const sortedPending = [...pendingEntries].sort(
-      (a, b) => new Date(a.recoveryDate).getTime() - new Date(b.recoveryDate).getTime()
+      (a, b) =>
+        parseDate(a.recoveryDate).getTime() -
+        parseDate(b.recoveryDate).getTime()
     );
     nextRecoveryDate = sortedPending[0].recoveryDate;
   }
@@ -80,64 +113,81 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
         };
 
   const handleSettleInFull = () => {
-    if (pendingEntries.length === 0) return;
+    if (pendingEntries.length === 0 || isSubmitting) return;
     setShowSettleConfirm(true);
   };
 
   const confirmSettleInFull = async () => {
+    if (isSubmitting) return;
     setShowSettleConfirm(false);
-    for (const entry of pendingEntries) {
-      await settleFriendEntry(
-        entry.id,
-        entry.remainingAmount,
-        true,
-        'Settled in full'
-      );
+    setIsSubmitting(true);
+    try {
+      await settleAllFriendEntries(liveFriend.id, 'Settled in full');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDeleteEntry = (entryId: string) => {
+    if (isSubmitting) return;
     setDeletingEntryId(entryId);
   };
 
   const confirmDeleteEntry = async () => {
-    if (!deletingEntryId) return;
+    if (!deletingEntryId || isSubmitting) return;
     const id = deletingEntryId;
     setDeletingEntryId(null);
-    await deleteFriendEntry(id);
+    setIsSubmitting(true);
+    try {
+      await deleteFriendEntry(id);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAction = async (actionType: 'repayment' | 'lent' | 'borrowed') => {
-    if (numAmount <= 0) return;
-    const finalNote = noteStr.trim() || (actionType === 'repayment' ? 'Repayment' : 'Entry');
+    if (numAmount <= 0 || isSubmitting) return;
+    const finalNote =
+      noteStr.trim() || (actionType === 'repayment' ? 'Repayment' : 'Entry');
 
-    if (actionType === 'repayment') {
-      // Find oldest pending entry to apply repayment against
-      if (pendingEntries.length > 0) {
-        const targetEntry = pendingEntries[0];
-        const isFull = numAmount >= targetEntry.remainingAmount;
-        await settleFriendEntry(
-          targetEntry.id,
-          Math.min(numAmount, targetEntry.remainingAmount),
-          isFull,
-          finalNote
+    setIsSubmitting(true);
+    try {
+      if (actionType === 'repayment') {
+        await recordFriendRepayment(liveFriend.id, numAmount, finalNote);
+      } else {
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + 14);
+        await addFriendEntry(
+          liveFriend.name,
+          numAmount,
+          actionType,
+          finalNote,
+          toDateString(futureDate)
         );
       }
-    } else {
-      // Add a new entry
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 14);
-      await addFriendEntry(
-        friend.name,
-        numAmount,
-        actionType,
-        finalNote,
-        futureDate.toISOString()
-      );
-    }
 
-    setAmountStr('');
-    setNoteStr('');
+      setAmountStr('');
+      setNoteStr('');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleShareStatement = async () => {
+    setSuppressAutoLock(true);
+    try {
+      const message = formatFriendStatement(liveFriend, thisFriendEntries);
+      await Share.share({
+        message,
+        title: `${liveFriend.name} — Friends Ledger Statement`,
+      });
+    } catch (err) {
+      console.log('Share statement note:', err);
+    } finally {
+      setTimeout(() => {
+        setSuppressAutoLock(false);
+      }, 400);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -155,14 +205,15 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onShow={resetTransientState}
+      onRequestClose={handleClose}
     >
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* Full-Screen Header */}
         <View style={styles.topHeader}>
           <TouchableOpacity
             style={styles.headerIconButton}
-            onPress={onClose}
+            onPress={handleClose}
             activeOpacity={0.7}
           >
             <MaterialIcons name="arrow-back" size={20} color={colors.ink} />
@@ -171,18 +222,30 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
           <View style={styles.headerTitleCol}>
             <Text style={styles.headerEyebrow}>Friend Ledger</Text>
             <Text style={styles.headerTitle} numberOfLines={1}>
-              {friend.name}
+              {liveFriend.name}
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.headerIconButton, { backgroundColor: colors.negSoft }]}
-            onPress={() => setShowDeleteFriendConfirm(true)}
-            activeOpacity={0.7}
-            accessibilityLabel="Delete friend"
-          >
-            <MaterialIcons name="person-remove" size={20} color={colors.neg} />
-          </TouchableOpacity>
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity
+              style={[styles.headerIconButton, { backgroundColor: colors.brandSoft }]}
+              onPress={handleShareStatement}
+              activeOpacity={0.7}
+              accessibilityLabel="Share friend ledger statement"
+            >
+              <MaterialIcons name="share" size={19} color={colors.brand} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.headerIconButton, { backgroundColor: colors.negSoft }]}
+              onPress={() => setShowDeleteFriendConfirm(true)}
+              disabled={isSubmitting}
+              activeOpacity={0.7}
+              accessibilityLabel="Delete friend"
+            >
+              <MaterialIcons name="person-remove" size={20} color={colors.neg} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <KeyboardAvoidingView
@@ -201,7 +264,7 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
             <View style={styles.heroCard}>
               <View style={styles.avatarLarge}>
                 <Text style={styles.avatarLargeText}>
-                  {getInitials(friend.name)}
+                  {getInitials(liveFriend.name)}
                 </Text>
               </View>
 
@@ -313,6 +376,7 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
                   placeholder="0"
                   placeholderTextColor={colors.line}
                   keyboardType="numeric"
+                  maxLength={10}
                   value={amountStr}
                   onChangeText={(txt) => setAmountStr(txt.replace(/[^0-9]/g, ''))}
                 />
@@ -332,9 +396,9 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
                 <TouchableOpacity
                   style={[
                     styles.secondaryBtn,
-                    numAmount <= 0 && styles.btnDisabled,
+                    (numAmount <= 0 || isSubmitting) && styles.btnDisabled,
                   ]}
-                  disabled={numAmount <= 0}
+                  disabled={numAmount <= 0 || isSubmitting}
                   onPress={() => handleAction(actions.secondary.type)}
                   activeOpacity={0.8}
                 >
@@ -346,9 +410,9 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
                 <TouchableOpacity
                   style={[
                     styles.primaryBtn,
-                    numAmount <= 0 && styles.btnDisabled,
+                    (numAmount <= 0 || isSubmitting) && styles.btnDisabled,
                   ]}
-                  disabled={numAmount <= 0}
+                  disabled={numAmount <= 0 || isSubmitting}
                   onPress={() => handleAction(actions.primary.type)}
                   activeOpacity={0.85}
                 >
@@ -493,15 +557,21 @@ export const FriendDetailModal: React.FC<FriendDetailModalProps> = ({
         <ConfirmModal
           visible={showDeleteFriendConfirm}
           title={`Remove ${firstName}?`}
-          message={`This will permanently delete ${friend.name} and all their ledger entries. Unsettled balances will be reversed from your Central Wallet. This cannot be undone.`}
+          message={`This will permanently delete ${liveFriend.name} and all their ledger entries. Unsettled balances will be reversed from your Central Wallet. This cannot be undone.`}
           confirmText="Remove Friend"
           cancelText="Cancel"
           type="danger"
           icon="person-remove"
           onConfirm={async () => {
+            if (isSubmitting) return;
             setShowDeleteFriendConfirm(false);
-            await deleteFriend(friend.id);
-            onClose();
+            setIsSubmitting(true);
+            try {
+              await deleteFriend(liveFriend.id);
+              handleClose();
+            } finally {
+              setIsSubmitting(false);
+            }
           }}
           onCancel={() => setShowDeleteFriendConfirm(false)}
         />
@@ -534,6 +604,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.line,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   headerTitleCol: {
     flex: 1,

@@ -113,6 +113,36 @@ export interface SecuritySettings {
   biometricsEnabled: boolean;
 }
 
+export type CreditCardEntryType = 'charge' | 'payment';
+
+export interface CreditCardMember {
+  id: string;
+  name: string; // case-insensitive unique
+  totalCharged: number; // Lifetime Rs. swiped on card for this person
+  totalPaid: number; // Lifetime Rs. received from this person
+  balanceOwed: number; // totalCharged - totalPaid (>0: owes me, <0: advance credit)
+  createdAt: string;
+}
+
+export interface CreditCardLedgerEntry {
+  id: string;
+  memberId: string;
+  memberName: string;
+  type: CreditCardEntryType; // 'charge' = Card used, 'payment' = Random payment received
+  amount: number; // Positive PKR amount
+  description: string;
+  date: string; // YYYY-MM-DD
+  createdAt: string; // ISO timestamp
+}
+
+export interface CreditCardBankPayment {
+  id: string;
+  amount: number; // Positive PKR amount paid to the credit card bank
+  note: string;
+  date: string; // YYYY-MM-DD
+  createdAt: string; // ISO timestamp
+}
+
 export interface WalletState {
   balance: number; // Central Wallet Balance (Rs.)
   transactions: WalletTransaction[];
@@ -120,9 +150,32 @@ export interface WalletState {
   salaryConfig: SalaryConfig;
   friends: Friend[];
   friendEntries: FriendEntry[];
+  creditCardMembers: CreditCardMember[];
+  creditCardEntries: CreditCardLedgerEntry[];
+  creditCardBankPayments: CreditCardBankPayment[];
   userProfile: UserProfile;
   securitySettings: SecuritySettings;
   isLoaded: boolean;
+}
+
+export interface WalletBackupData {
+  balance: number;
+  transactions: WalletTransaction[];
+  bills: Bill[];
+  salaryConfig: SalaryConfig;
+  friends: Friend[];
+  friendEntries: FriendEntry[];
+  creditCardMembers: CreditCardMember[];
+  creditCardEntries: CreditCardLedgerEntry[];
+  creditCardBankPayments: CreditCardBankPayment[];
+  userProfile: UserProfile;
+}
+
+export interface WalletBackupPayload {
+  app: 'Pocket Wallet';
+  schemaVersion: 1;
+  exportedAt: string;
+  data: WalletBackupData;
 }
 
 export interface DueActionItem {

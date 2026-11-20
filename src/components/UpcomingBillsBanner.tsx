@@ -10,7 +10,12 @@ import {
 import { colors } from '../theme/colors';
 import { radius, spacing } from '../theme/tokens';
 import { Bill } from '../types';
-import { formatDateDisplay, formatRs, getDaysUntil } from '../utils/formatters';
+import {
+  formatDateDisplay,
+  formatRs,
+  getDaysUntil,
+  parseDate,
+} from '../utils/formatters';
 
 interface UpcomingBillsBannerProps {
   bills: Bill[];
@@ -27,7 +32,7 @@ export const UpcomingBillsBanner: React.FC<UpcomingBillsBannerProps> = ({
   const upcomingBills = bills
     .filter((b) => !b.isPaid)
     .sort(
-      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      (a, b) => parseDate(a.dueDate).getTime() - parseDate(b.dueDate).getTime()
     );
 
   if (upcomingBills.length === 0) {

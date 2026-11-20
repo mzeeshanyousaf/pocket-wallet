@@ -17,7 +17,7 @@ import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/tokens';
 import { Bill } from '../types';
-import { formatRs } from '../utils/formatters';
+import { formatDateDisplay, formatRs } from '../utils/formatters';
 
 interface PayBillModalProps {
   visible: boolean;
@@ -34,18 +34,22 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
   const { height: windowHeight } = useWindowDimensions();
   const dynamicMaxHeight = Math.min(windowHeight * 0.9, 700);
 
-  const [amountStr, setAmountStr] = useState('');
+  const [amountStr, setAmountStr] = useState(() =>
+    bill ? bill.estimatedAmount.toString() : ''
+  );
   const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleShow = () => {
+  const resetFromBill = () => {
     if (bill) {
       setAmountStr(bill.estimatedAmount.toString());
     }
     setErrorText('');
+    setIsSubmitting(false);
   };
 
   const handleConfirmPay = async () => {
-    if (!bill) return;
+    if (!bill || isSubmitting) return;
     setErrorText('');
 
     const numAmount = parseFloat(amountStr.replace(/,/g, ''));
@@ -54,8 +58,13 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
       return;
     }
 
-    await payBill(bill.id, numAmount);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await payBill(bill.id, numAmount);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!bill) return null;
@@ -68,8 +77,8 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
       visible={visible}
       transparent
       animationType="slide"
+      onShow={resetFromBill}
       onRequestClose={onClose}
-      onShow={handleShow}
       statusBarTranslucent
     >
       <KeyboardAvoidingView
@@ -116,7 +125,7 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
                     <View style={styles.billSummaryInfo}>
                       <Text style={styles.billTitle}>{bill.title}</Text>
                       <Text style={styles.billMeta}>
-                        {bill.category} · Due {bill.dueDate}
+                        {bill.category} · Due {formatDateDisplay(bill.dueDate)}
                       </Text>
                     </View>
                   </View>
@@ -131,6 +140,7 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
                         placeholder="0"
                         placeholderTextColor={colors.line}
                         keyboardType="numeric"
+                        maxLength={10}
                         value={amountStr}
                         onChangeText={(txt) => setAmountStr(txt.replace(/[^0-9]/g, ''))}
                         autoFocus
@@ -176,6 +186,7 @@ export const PayBillModal: React.FC<PayBillModalProps> = ({
                     <TouchableOpacity
                       style={styles.confirmBtn}
                       onPress={handleConfirmPay}
+                      disabled={isSubmitting}
                       activeOpacity={0.85}
                     >
                       <MaterialIcons name="check-circle" size={18} color="#FFFFFF" />

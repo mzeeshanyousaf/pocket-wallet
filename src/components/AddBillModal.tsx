@@ -80,7 +80,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const { height: windowHeight } = useWindowDimensions();
   const dynamicMaxHeight = Math.min(windowHeight * 0.88, 700);
 
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState('Electricity (WAPDA / K-Electric)');
   const [category, setCategory] = useState<BillCategory>('Electricity');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState(() =>
@@ -90,8 +90,9 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   const [customDays, setCustomDays] = useState('6');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleShow = () => {
+  const resetForm = () => {
     setTitle('Electricity (WAPDA / K-Electric)');
     setCategory('Electricity');
     setAmount('');
@@ -99,6 +100,12 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
     setFrequency('monthly');
     setCustomDays('6');
     setErrorText('');
+    setIsSubmitting(false);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
   };
 
   const handleCategorySelect = (preset: typeof presetCategories[0]) => {
@@ -110,6 +117,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (isSubmitting) return;
     setErrorText('');
     const cleanTitle = title.trim();
     if (!cleanTitle) {
@@ -123,15 +131,20 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
       return;
     }
 
-    await addBill(
-      cleanTitle,
-      category,
-      cleanAmount,
-      dueDate,
-      frequency,
-      parseInt(customDays, 10) || 6
-    );
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await addBill(
+        cleanTitle,
+        category,
+        cleanAmount,
+        dueDate,
+        frequency,
+        parseInt(customDays, 10) || 6
+      );
+      handleClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -140,15 +153,15 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
         visible={visible}
         transparent
         animationType="slide"
-        onRequestClose={onClose}
-        onShow={handleShow}
+        onShow={resetForm}
+        onRequestClose={handleClose}
         statusBarTranslucent
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoidRoot}
         >
-          <TouchableWithoutFeedback onPress={onClose}>
+          <TouchableWithoutFeedback onPress={handleClose}>
             <View style={styles.backdrop}>
               <TouchableWithoutFeedback>
                 <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
@@ -159,7 +172,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                   <View style={styles.titleRow}>
                     <Text style={styles.sheetTitle}>Schedule Recurring Bill</Text>
                     <TouchableOpacity
-                      onPress={onClose}
+                      onPress={handleClose}
                       style={styles.closeBtn}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
@@ -190,6 +203,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                           placeholder="0"
                           placeholderTextColor={colors.line}
                           keyboardType="numeric"
+                          maxLength={10}
                           value={amount}
                           onChangeText={(txt) => setAmount(txt.replace(/[^0-9]/g, ''))}
                           autoFocus
@@ -334,6 +348,7 @@ export const AddBillModal: React.FC<AddBillModalProps> = ({
                     <TouchableOpacity
                       style={styles.submitBtn}
                       onPress={handleSave}
+                      disabled={isSubmitting}
                       activeOpacity={0.85}
                     >
                       <MaterialIcons name="add-task" size={18} color="#FFFFFF" />

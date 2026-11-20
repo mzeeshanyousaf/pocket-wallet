@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActionRequiredCard } from '../components/ActionRequiredCard';
 import { BalanceCard } from '../components/BalanceCard';
 import { FriendDetailModal } from '../components/FriendDetailModal';
+import { MonthlyInsightsCard } from '../components/MonthlyInsightsCard';
 import { PayBillModal } from '../components/PayBillModal';
 import { QuickEntryModal } from '../components/QuickEntryModal';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -19,7 +20,11 @@ import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/tokens';
 import { Bill, DueActionItem, Friend, WalletTransaction } from '../types';
-import { formatDateDisplay } from '../utils/formatters';
+import {
+  formatDateDisplay,
+  isInflowTransaction,
+  parseDate,
+} from '../utils/formatters';
 
 interface HomeScreenProps {
   navigation: any;
@@ -35,6 +40,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     dueActionItems,
     userProfile,
     deleteTransaction,
+    refreshWallet,
   } = useWallet();
 
   const insets = useSafeAreaInsets();
@@ -45,14 +51,63 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [cashflowFilter, setCashflowFilter] = useState<CashflowFilter>('all');
   const [selectedBillForPay, setSelectedBillForPay] = useState<Bill | null>(null);
   const [selectedFriendForDetail, setSelectedFriendForDetail] = useState<Friend | null>(null);
+  const [selectedPeriod, setSelectedPeriod] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
 
-  // Group transactions by date
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const isCurrentMonth =
+    selectedPeriod.year === currentYear && selectedPeriod.month === currentMonth;
+
+  const selectedMonthLabel = new Date(
+    selectedPeriod.year,
+    selectedPeriod.month,
+    1
+  ).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  const handlePrevMonth = () => {
+    setSelectedPeriod((prev) => {
+      if (prev.month === 0) {
+        return { year: prev.year - 1, month: 11 };
+      }
+      return { year: prev.year, month: prev.month - 1 };
+    });
+  };
+
+  const handleNextMonth = () => {
+    setSelectedPeriod((prev) => {
+      if (prev.year === currentYear && prev.month === currentMonth) {
+        return prev;
+      }
+      if (prev.month === 11) {
+        return { year: prev.year + 1, month: 0 };
+      }
+      return { year: prev.year, month: prev.month + 1 };
+    });
+  };
+
+  const handleJumpToCurrent = () => {
+    const d = new Date();
+    setSelectedPeriod({ year: d.getFullYear(), month: d.getMonth() });
+  };
+
+  const monthTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      const d = parseDate(tx.date);
+      return (
+        d.getFullYear() === selectedPeriod.year &&
+        d.getMonth() === selectedPeriod.month
+      );
+    });
+  }, [transactions, selectedPeriod]);
+
+  // Group selected month's transactions by date
   const filteredAndGroupedTransactions = useMemo(() => {
-    const list = transactions.filter((tx) => {
-      const isIn =
-        tx.type === 'income' ||
-        tx.type === 'salary' ||
-        (tx.type === 'friend_settlement' && tx.settlementType === 'received_back');
+    const list = monthTransactions.filter((tx) => {
+      const isIn = isInflowTransaction(tx);
       if (cashflowFilter === 'in') return isIn;
       if (cashflowFilter === 'out') return !isIn;
       return true;
@@ -74,13 +129,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     });
 
     return groups;
-  }, [transactions, cashflowFilter]);
+  }, [monthTransactions, cashflowFilter]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
+    try {
+      await refreshWallet();
+    } finally {
       setRefreshing(false);
-    }, 400);
+    }
   };
 
   const handleOpenCashIn = () => {
@@ -176,6 +233,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               </View>
             )}
 
+            {/* Month Switcher & Category Spending Breakdown */}
+            <MonthlyInsightsCard
+              selectedYear={selectedPeriod.year}
+              selectedMonth={selectedPeriod.month}
+              isCurrentMonth={isCurrentMonth}
+              onPrevMonth={handlePrevMonth}
+              onNextMonth={handleNextMonth}
+              onJumpToCurrent={handleJumpToCurrent}
+              transactions={monthTransactions}
+              balanceHidden={balanceHidden}
+            />
+
             {/* Cashflow Stream Title & Segmented Filter Bar */}
             <View style={styles.cashflowHeaderRow}>
               <Text style={styles.cashflowTitle}>Cashflow</Text>
@@ -228,10 +297,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <Text style={styles.emptyInboxEmoji}>📥</Text>
             </View>
             <Text style={styles.emptyTitle}>
-              No {cashflowFilter === 'in' ? 'inflows' : cashflowFilter === 'out' ? 'outflows' : 'transactions'} yet
+              No{' '}
+              {cashflowFilter === 'in'
+                ? 'inflows'
+                : cashflowFilter === 'out'
+                ? 'outflows'
+                : 'transactions'}{' '}
+              {isCurrentMonth ? 'yet' : `in ${selectedMonthLabel}`}
             </Text>
             <Text style={styles.emptySubtitle}>
-              Use Cash in or Cash out to log money as it moves.
+              {isCurrentMonth
+                ? 'Use Cash in or Cash out to log money as it moves.'
+                : `Switch months above or tap Today to return to the current cycle.`}
             </Text>
           </View>
         }

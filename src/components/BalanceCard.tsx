@@ -5,6 +5,7 @@ import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native
 import { useWallet } from '../context/WalletContext';
 import { colors } from '../theme/colors';
 import { heroShadow, radius } from '../theme/tokens';
+import { formatRs } from '../utils/formatters';
 
 interface BalanceCardProps {
   balanceHidden: boolean;
@@ -19,7 +20,15 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
   onCashIn,
   onCashOut,
 }) => {
-  const { balance, monthlyIncome, monthlyExpenses } = useWallet();
+  const {
+    balance,
+    monthlyIncome,
+    monthlyExpenses,
+    unpaidBillsTotal,
+    safeToSpend,
+    daysUntilPayday,
+    dailySafeBudget,
+  } = useWallet();
 
   const currentMonthName = new Date().toLocaleString('en-US', { month: 'long' });
 
@@ -48,73 +57,104 @@ export const BalanceCard: React.FC<BalanceCardProps> = ({
 
   return (
     <View style={[styles.card, heroShadow]}>
-      {/* Top row: Label & Visibility Eye */}
-      <View style={styles.topRow}>
-        <Text style={styles.topLabel}>Available balance</Text>
-        <TouchableOpacity
-          onPress={handleToggle}
-          style={styles.eyeBtn}
-          accessibilityLabel={balanceHidden ? 'Show balance' : 'Hide balance'}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <MaterialIcons
-            name={balanceHidden ? 'visibility-off' : 'visibility'}
-            size={18}
-            color="rgba(255, 255, 255, 0.75)"
-          />
-        </TouchableOpacity>
-      </View>
+      <View style={styles.cardBody}>
+        {/* Top row: Label & Visibility Eye */}
+        <View style={styles.topRow}>
+          <Text style={styles.topLabel}>Available balance</Text>
+          <TouchableOpacity
+            onPress={handleToggle}
+            style={styles.eyeBtn}
+            accessibilityLabel={balanceHidden ? 'Show balance' : 'Hide balance'}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <MaterialIcons
+              name={balanceHidden ? 'visibility-off' : 'visibility'}
+              size={18}
+              color="rgba(255, 255, 255, 0.75)"
+            />
+          </TouchableOpacity>
+        </View>
 
-      {/* Main Balance */}
-      <View style={styles.balanceRow}>
-        <Text style={styles.currencyPrefix}>
-          {balance < 0 && !balanceHidden ? '−Rs.' : 'Rs.'}
-        </Text>
-        <Text style={styles.balanceText}>
-          {maskValue(Math.abs(balance).toLocaleString('en-PK'))}
-        </Text>
-      </View>
-
-      {/* Monthly Cashflow Breakdown */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCol}>
-          <Text style={styles.statLabel}>In · {currentMonthName}</Text>
-          <Text style={[styles.statValue, { color: colors.posOnDark }]}>
-            +Rs. {maskValue(monthlyIncome.toLocaleString('en-PK'))}
+        {/* Main Balance */}
+        <View style={styles.balanceRow}>
+          <Text style={styles.currencyPrefix}>
+            {balance < 0 && !balanceHidden ? '−Rs.' : 'Rs.'}
+          </Text>
+          <Text style={styles.balanceText}>
+            {maskValue(Math.abs(balance).toLocaleString('en-PK'))}
           </Text>
         </View>
 
-        <View style={styles.statCol}>
-          <Text style={styles.statLabel}>Out · {currentMonthName}</Text>
-          <Text style={[styles.statValue, { color: colors.negOnDark }]}>
-            −Rs. {maskValue(monthlyExpenses.toLocaleString('en-PK'))}
-          </Text>
+        {/* Monthly Cashflow Breakdown */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCol}>
+            <Text style={styles.statLabel}>In · {currentMonthName}</Text>
+            <Text style={[styles.statValue, { color: colors.posOnDark }]}>
+              +Rs. {maskValue(monthlyIncome.toLocaleString('en-PK'))}
+            </Text>
+          </View>
+
+          <View style={styles.statCol}>
+            <Text style={styles.statLabel}>Out · {currentMonthName}</Text>
+            <Text style={[styles.statValue, { color: colors.negOnDark }]}>
+              −Rs. {maskValue(monthlyExpenses.toLocaleString('en-PK'))}
+            </Text>
+          </View>
+        </View>
+
+        {/* Action Buttons: Cash In & Cash Out */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={styles.cashInBtn}
+            onPress={handleCashIn}
+            activeOpacity={0.88}
+          >
+            <View style={styles.plusCircle}>
+              <MaterialIcons name="add" size={14} color="#FFFFFF" />
+            </View>
+            <Text style={styles.cashInText}>Cash in</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cashOutBtn}
+            onPress={handleCashOut}
+            activeOpacity={0.88}
+          >
+            <View style={styles.minusCircle}>
+              <MaterialIcons name="remove" size={14} color="#FFFFFF" />
+            </View>
+            <Text style={styles.cashOutText}>Cash out</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Action Buttons: Cash In & Cash Out */}
-      <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={styles.cashInBtn}
-          onPress={handleCashIn}
-          activeOpacity={0.88}
-        >
-          <View style={styles.plusCircle}>
-            <MaterialIcons name="add" size={14} color="#FFFFFF" />
-          </View>
-          <Text style={styles.cashInText}>Cash in</Text>
-        </TouchableOpacity>
+      {/* Safe to Spend Footer Strip */}
+      <View style={styles.safeStrip}>
+        <View style={styles.safeLeftCol}>
+          <Text style={styles.safeLabel}>Safe to spend</Text>
+          <Text style={styles.safeSub} numberOfLines={1}>
+            {unpaidBillsTotal > 0
+              ? `After ${balanceHidden ? '••••' : formatRs(unpaidBillsTotal)} unpaid bills`
+              : 'No unpaid bills pending'}
+          </Text>
+        </View>
 
-        <TouchableOpacity
-          style={styles.cashOutBtn}
-          onPress={handleCashOut}
-          activeOpacity={0.88}
-        >
-          <View style={styles.minusCircle}>
-            <MaterialIcons name="remove" size={14} color="#FFFFFF" />
-          </View>
-          <Text style={styles.cashOutText}>Cash out</Text>
-        </TouchableOpacity>
+        <View style={styles.safeRightCol}>
+          <Text
+            style={[
+              styles.safeAmount,
+              { color: safeToSpend >= 0 ? colors.posOnDark : colors.negOnDark },
+            ]}
+          >
+            {balanceHidden ? 'Rs. ••••••' : formatRs(safeToSpend)}
+          </Text>
+          {dailySafeBudget !== null && safeToSpend > 0 && !balanceHidden && (
+            <Text style={styles.safeDailyText}>
+              ~{formatRs(dailySafeBudget)}/day ·{' '}
+              {daysUntilPayday === 0 ? 'payday today' : `${daysUntilPayday}d left`}
+            </Text>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -125,12 +165,15 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: radius.card,
     backgroundColor: colors.brand,
-    padding: 20,
+    overflow: 'hidden',
     shadowColor: colors.brand,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.22,
     shadowRadius: 16,
     elevation: 8,
+  },
+  cardBody: {
+    padding: 20,
   },
   topRow: {
     flexDirection: 'row',
@@ -241,5 +284,43 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '700',
     color: '#6E1616',
+  },
+  safeStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.12)',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    backgroundColor: 'rgba(0, 0, 0, 0.14)',
+    gap: 10,
+  },
+  safeLeftCol: {
+    flex: 1,
+  },
+  safeLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: 'rgba(255, 255, 255, 0.90)',
+  },
+  safeSub: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.60)',
+    marginTop: 1,
+  },
+  safeRightCol: {
+    alignItems: 'flex-end',
+  },
+  safeAmount: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  safeDailyText: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.72)',
+    marginTop: 1,
+    fontVariant: ['tabular-nums'],
   },
 });

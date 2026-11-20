@@ -39,26 +39,38 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
   const { height: windowHeight } = useWindowDimensions();
   const dynamicMaxHeight = Math.min(windowHeight * 0.88, 700);
 
-  const [friendName, setFriendName] = useState(preselectedFriendName || prefilledFriendName);
+  const [draftFriendName, setDraftFriendName] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
-  const [type, setType] = useState<FriendEntryType>(defaultType);
+  const [draftType, setDraftType] = useState<FriendEntryType | null>(null);
   const [description, setDescription] = useState('');
   const [recoveryDate, setRecoveryDate] = useState(() =>
     toDateString(new Date(Date.now() + 86400000 * 7))
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleShow = () => {
-    setFriendName(preselectedFriendName || prefilledFriendName || '');
+  const friendName =
+    draftFriendName ?? (preselectedFriendName || prefilledFriendName || '');
+  const type = draftType ?? defaultType;
+
+  const resetForm = () => {
+    setDraftFriendName(null);
     setAmount('');
-    setType(defaultType);
+    setDraftType(null);
     setDescription('');
     setRecoveryDate(toDateString(new Date(Date.now() + 86400000 * 7)));
     setErrorText('');
+    setIsSubmitting(false);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
   };
 
   const handleSave = async () => {
+    if (isSubmitting) return;
     setErrorText('');
     const cleanName = friendName.trim();
     if (!cleanName) {
@@ -72,16 +84,21 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
       return;
     }
 
-    await addFriendEntry(
-      cleanName,
-      cleanAmount,
-      type,
-      description.trim() ||
-        (type === 'lent' ? 'Money Lent' : 'Money Borrowed'),
-      recoveryDate
-    );
+    setIsSubmitting(true);
+    try {
+      await addFriendEntry(
+        cleanName,
+        cleanAmount,
+        type,
+        description.trim() ||
+          (type === 'lent' ? 'Money Lent' : 'Money Borrowed'),
+        recoveryDate
+      );
 
-    onClose();
+      handleClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isLent = type === 'lent';
@@ -92,15 +109,15 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
         visible={visible}
         transparent
         animationType="slide"
-        onRequestClose={onClose}
-        onShow={handleShow}
+        onShow={resetForm}
+        onRequestClose={handleClose}
         statusBarTranslucent
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoidRoot}
         >
-          <TouchableWithoutFeedback onPress={onClose}>
+          <TouchableWithoutFeedback onPress={handleClose}>
             <View style={styles.backdrop}>
               <TouchableWithoutFeedback>
                 <View style={[styles.sheetContainer, { maxHeight: dynamicMaxHeight }]}>
@@ -111,7 +128,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                   <View style={styles.titleRow}>
                     <Text style={styles.sheetTitle}>Give &amp; Take Entry</Text>
                     <TouchableOpacity
-                      onPress={onClose}
+                      onPress={handleClose}
                       style={styles.closeBtn}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
@@ -139,7 +156,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                           styles.segmentBtn,
                           isLent && styles.segmentBtnActiveLent,
                         ]}
-                        onPress={() => setType('lent')}
+                        onPress={() => setDraftType('lent')}
                         activeOpacity={0.8}
                       >
                         <MaterialIcons
@@ -162,7 +179,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                           styles.segmentBtn,
                           !isLent && styles.segmentBtnActiveBorrowed,
                         ]}
-                        onPress={() => setType('borrowed')}
+                        onPress={() => setDraftType('borrowed')}
                         activeOpacity={0.8}
                       >
                         <MaterialIcons
@@ -196,6 +213,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                           placeholder="0"
                           placeholderTextColor={colors.line}
                           keyboardType="numeric"
+                          maxLength={10}
                           value={amount}
                           onChangeText={(txt) => setAmount(txt.replace(/[^0-9]/g, ''))}
                           autoFocus={!preselectedFriendName}
@@ -222,7 +240,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                                   styles.friendChip,
                                   isSelected && styles.friendChipActive,
                                 ]}
-                                onPress={() => setFriendName(f.name)}
+                                onPress={() => setDraftFriendName(f.name)}
                                 activeOpacity={0.7}
                               >
                                 <View
@@ -263,7 +281,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                         placeholder="e.g. Ahmad, Hamza, Bilal..."
                         placeholderTextColor={colors.subtle}
                         value={friendName}
-                        onChangeText={setFriendName}
+                        onChangeText={setDraftFriendName}
                         editable={!preselectedFriendName}
                       />
                     </View>
@@ -326,6 +344,7 @@ export const AddFriendEntryModal: React.FC<AddFriendEntryModalProps> = ({
                         },
                       ]}
                       onPress={handleSave}
+                      disabled={isSubmitting}
                       activeOpacity={0.85}
                     >
                       <MaterialIcons

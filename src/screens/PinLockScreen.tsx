@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as LocalAuthentication from 'expo-local-authentication';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -84,33 +84,38 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
   const [errorShake] = useState(new Animated.Value(0));
   const [errorMessage, setErrorMessage] = useState('');
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
+  const [lockoutChecked, setLockoutChecked] = useState(false);
   const [biometricsAvailable, setBiometricsAvailable] = useState(false);
   const [biometricTypeLabel, setBiometricTypeLabel] = useState<'Fingerprint' | 'Face ID'>('Fingerprint');
 
+  const isVerifyingRef = useRef(false);
+  const hasAutoPromptedRef = useRef(false);
   const reducedMotion = useReducedMotion();
 
   // Check initial rate-limit lockout status
   useEffect(() => {
-    SecurityService.getLockoutStatus().then((status) => {
-      if (status.isLocked) {
-        setLockoutSeconds(status.remainingLockoutSeconds);
-        setErrorMessage(`Too many attempts. Locked for ${status.remainingLockoutSeconds}s.`);
-      }
-    });
+    let isMounted = true;
+    SecurityService.getLockoutStatus()
+      .then((status) => {
+        if (!isMounted) return;
+        if (status.isLocked) {
+          setLockoutSeconds(status.remainingLockoutSeconds);
+        }
+        setLockoutChecked(true);
+      })
+      .catch(() => {
+        if (isMounted) setLockoutChecked(true);
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Active countdown timer during lockout window
   useEffect(() => {
     if (lockoutSeconds <= 0) return;
     const timer = setInterval(() => {
-      setLockoutSeconds((prev) => {
-        if (prev <= 1) {
-          setErrorMessage('');
-          return 0;
-        }
-        setErrorMessage(`Too many attempts. Locked for ${prev - 1}s.`);
-        return prev - 1;
-      });
+      setLockoutSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
     return () => clearInterval(timer);
@@ -160,6 +165,7 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
     }
   }, [lockoutSeconds, onSuccess]);
 
+  // Hardware biometric capability detection (runs once on mount)
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -174,15 +180,6 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
           } else {
             setBiometricTypeLabel('Fingerprint');
           }
-
-          // Automatically prompt for fingerprint if user enabled biometrics and not locked out
-          if (securitySettings.biometricsEnabled && lockoutSeconds === 0) {
-            setTimeout(() => {
-              if (isMounted) {
-                triggerBiometricAuth();
-              }
-            }, 350);
-          }
         }
       } catch (e) {
         console.log('Biometric detection note:', e);
@@ -192,10 +189,36 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
     return () => {
       isMounted = false;
     };
-  }, [securitySettings.biometricsEnabled, lockoutSeconds, triggerBiometricAuth]);
+  }, []);
+
+  // Auto-prompt biometric auth once lockout status is resolved and device is unlocked
+  useEffect(() => {
+    if (
+      !lockoutChecked ||
+      !biometricsAvailable ||
+      !securitySettings.biometricsEnabled ||
+      lockoutSeconds > 0 ||
+      hasAutoPromptedRef.current
+    ) {
+      return;
+    }
+
+    hasAutoPromptedRef.current = true;
+    const timer = setTimeout(() => {
+      triggerBiometricAuth();
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [
+    lockoutChecked,
+    biometricsAvailable,
+    securitySettings.biometricsEnabled,
+    lockoutSeconds,
+    triggerBiometricAuth,
+  ]);
 
   const handleKeyPress = async (num: string) => {
-    if (lockoutSeconds > 0) return;
+    if (isVerifyingRef.current || lockoutSeconds > 0) return;
     if (enteredPin.length >= 4) return;
 
     if (Platform.OS !== 'web') {
@@ -207,31 +230,43 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
     setErrorMessage('');
 
     if (newPin.length === 4) {
-      const isValid = await SecurityService.verifyPin(newPin);
-      if (isValid) {
-        await SecurityService.resetFailedAttempts();
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        }
-        onSuccess();
-      } else {
-        const rateResult = await SecurityService.recordFailedAttempt();
-        triggerShake();
-
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-        }
-
-        if (rateResult.isLocked) {
-          setLockoutSeconds(rateResult.remainingLockoutSeconds);
-          setErrorMessage(`Too many attempts. Locked for ${rateResult.remainingLockoutSeconds}s.`);
+      isVerifyingRef.current = true;
+      let failedWithDelay = false;
+      try {
+        const isValid = await SecurityService.verifyPin(newPin);
+        if (isValid) {
+          await SecurityService.resetFailedAttempts();
+          if (Platform.OS !== 'web') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          }
+          onSuccess();
         } else {
-          setErrorMessage(`Incorrect PIN. ${rateResult.attempts} failed attempt${rateResult.attempts > 1 ? 's' : ''}.`);
-        }
+          failedWithDelay = true;
+          const rateResult = await SecurityService.recordFailedAttempt();
+          triggerShake();
 
-        setTimeout(() => {
-          setEnteredPin('');
-        }, 300);
+          if (Platform.OS !== 'web') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          }
+
+          if (rateResult.isLocked) {
+            setLockoutSeconds(rateResult.remainingLockoutSeconds);
+            setErrorMessage('');
+          } else {
+            setErrorMessage(
+              `Incorrect PIN. ${rateResult.attempts} failed attempt${rateResult.attempts > 1 ? 's' : ''}.`
+            );
+          }
+
+          setTimeout(() => {
+            setEnteredPin('');
+            isVerifyingRef.current = false;
+          }, 300);
+        }
+      } finally {
+        if (!failedWithDelay) {
+          isVerifyingRef.current = false;
+        }
       }
     }
   };
@@ -249,6 +284,10 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
 
   const showBiometrics = biometricsAvailable && securitySettings.biometricsEnabled;
   const isKeypadDisabled = lockoutSeconds > 0;
+  const displayError =
+    lockoutSeconds > 0
+      ? `Too many attempts. Locked for ${lockoutSeconds}s.`
+      : errorMessage;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
@@ -285,16 +324,16 @@ export const PinLockScreen: React.FC<PinLockScreenProps> = ({ onSuccess }) => {
               style={[
                 styles.dot,
                 filled ? styles.dotFilled : null,
-                errorMessage ? styles.dotError : null,
+                displayError ? styles.dotError : null,
               ]}
             />
           );
         })}
       </Animated.View>
 
-      {errorMessage ? (
+      {displayError ? (
         <Text style={[styles.errorText, lockoutSeconds > 0 && styles.lockoutErrorText]}>
-          {errorMessage}
+          {displayError}
         </Text>
       ) : (
         <View style={styles.errorPlaceholder} />

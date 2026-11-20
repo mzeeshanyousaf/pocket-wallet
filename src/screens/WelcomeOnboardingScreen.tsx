@@ -13,8 +13,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWallet } from '../context/WalletContext';
+import { SecurityService } from '../services/security';
 import { colors } from '../theme/colors';
 import { glassCardShadow, radius } from '../theme/tokens';
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface WelcomeOnboardingScreenProps {
   onComplete: () => void;
@@ -32,6 +35,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleNext = () => {
     setErrorText('');
@@ -39,7 +43,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
       setErrorText('Please enter your full name to get started.');
       return;
     }
-    if (!email.trim() || !email.includes('@')) {
+    if (!EMAIL_REGEX.test(email.trim())) {
       setErrorText('Please enter a valid email address.');
       return;
     }
@@ -47,6 +51,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
   };
 
   const handleFinish = async (enablePin: boolean) => {
+    if (isSubmitting) return;
     setErrorText('');
     if (enablePin) {
       if (pin.length !== 4) {
@@ -59,32 +64,42 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
       }
     }
 
-    const cleanName = name.trim();
-    const parts = cleanName.split(/\s+/);
-    const initials = parts.length > 1
-      ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-      : parts[0].slice(0, 2).toUpperCase();
+    setIsSubmitting(true);
+    try {
+      const cleanName = name.trim();
+      const parts = cleanName.split(/\s+/);
+      const initials =
+        parts.length > 1
+          ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+          : parts[0].slice(0, 2).toUpperCase();
 
-    await updateUserProfile({
-      name: cleanName,
-      email: email.trim().toLowerCase(),
-      avatarInitials: initials,
-    });
+      await updateUserProfile({
+        name: cleanName,
+        email: email.trim().toLowerCase(),
+        avatarInitials: initials,
+      });
 
-    if (enablePin) {
-      await updateSecuritySettings({
-        pin: pin,
-        isPinEnabled: true,
-      });
-    } else {
-      await updateSecuritySettings({
-        pin: null,
-        isPinEnabled: false,
-      });
+      if (enablePin) {
+        await SecurityService.setPin(pin);
+        await updateSecuritySettings({
+          pin: null,
+          isPinEnabled: true,
+          biometricsEnabled: false,
+        });
+      } else {
+        await SecurityService.removePin();
+        await updateSecuritySettings({
+          pin: null,
+          isPinEnabled: false,
+          biometricsEnabled: false,
+        });
+      }
+
+      unlockApp();
+      onComplete();
+    } finally {
+      setIsSubmitting(false);
     }
-
-    unlockApp();
-    onComplete();
   };
 
   return (
@@ -181,7 +196,21 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
             /* STEP 2: PIN Setup */
             <View style={styles.stepCard}>
               <View style={styles.stepHeader}>
-                <Text style={styles.stepBadge}>Step 2 of 2</Text>
+                <View style={styles.stepTopRow}>
+                  <Text style={styles.stepBadge}>Step 2 of 2</Text>
+                  <TouchableOpacity
+                    style={styles.backStepBtn}
+                    onPress={() => {
+                      setStep(1);
+                      setErrorText('');
+                    }}
+                    disabled={isSubmitting}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="arrow-back" size={14} color={colors.brand} />
+                    <Text style={styles.backStepBtnText}>Edit details</Text>
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.stepTitle}>Secure with 4-Digit PIN</Text>
                 <Text style={styles.stepSubtitle}>
                   Choose a secret PIN to lock your wallet whenever you open the app.
@@ -233,10 +262,12 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
               <TouchableOpacity
                 style={[
                   styles.continueBtn,
-                  pin.length === 4 && confirmPin.length === 4 ? null : styles.continueBtnDisabled,
+                  (pin.length === 4 && confirmPin.length === 4 && !isSubmitting)
+                    ? null
+                    : styles.continueBtnDisabled,
                 ]}
                 onPress={() => handleFinish(true)}
-                disabled={pin.length !== 4 || confirmPin.length !== 4}
+                disabled={pin.length !== 4 || confirmPin.length !== 4 || isSubmitting}
                 activeOpacity={0.8}
               >
                 <MaterialIcons name="lock" size={18} color="#FFFFFF" />
@@ -246,6 +277,7 @@ export const WelcomeOnboardingScreen: React.FC<WelcomeOnboardingScreenProps> = (
               <TouchableOpacity
                 style={styles.skipBtn}
                 onPress={() => handleFinish(false)}
+                disabled={isSubmitting}
                 activeOpacity={0.7}
               >
                 <Text style={styles.skipBtnText}>Skip PIN protection for now</Text>
@@ -297,13 +329,30 @@ const styles = StyleSheet.create({
   stepHeader: {
     marginBottom: 20,
   },
+  stepTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  backStepBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  backStepBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.brand,
+  },
   stepBadge: {
     fontSize: 11.5,
     fontWeight: '700',
     color: colors.brand,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: 4,
   },
   stepTitle: {
     fontSize: 22,

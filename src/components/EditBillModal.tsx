@@ -51,30 +51,39 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
   const { height: windowHeight } = useWindowDimensions();
   const dynamicMaxHeight = Math.min(windowHeight * 0.92, 740);
 
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<BillCategory>('Other');
-  const [amount, setAmount] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [frequency, setFrequency] = useState<BillFrequency>('monthly');
-  const [customDays, setCustomDays] = useState('6');
+  const [title, setTitle] = useState(() => bill?.title ?? '');
+  const [category, setCategory] = useState<BillCategory>(
+    () => (bill?.category as BillCategory) ?? 'Other'
+  );
+  const [amount, setAmount] = useState(() =>
+    bill ? bill.estimatedAmount.toString() : ''
+  );
+  const [dueDate, setDueDate] = useState(() => bill?.dueDate ?? '');
+  const [frequency, setFrequency] = useState<BillFrequency>(
+    () => bill?.frequency || 'monthly'
+  );
+  const [customDays, setCustomDays] = useState(() =>
+    String(bill?.frequencyDays || 6)
+  );
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [errorText, setErrorText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleShow = () => {
-    if (bill) {
-      setTitle(bill.title);
-      setCategory(bill.category as BillCategory);
-      setAmount(bill.estimatedAmount.toString());
-      setDueDate(bill.dueDate);
-      setFrequency(bill.frequency || 'monthly');
-      setCustomDays(String(bill.frequencyDays || 6));
-      setErrorText('');
-    }
+  const resetFromBill = () => {
+    if (!bill) return;
+    setTitle(bill.title);
+    setCategory(bill.category as BillCategory);
+    setAmount(bill.estimatedAmount.toString());
+    setDueDate(bill.dueDate);
+    setFrequency(bill.frequency || 'monthly');
+    setCustomDays(String(bill.frequencyDays || 6));
+    setErrorText('');
+    setIsSubmitting(false);
   };
 
   const handleSave = async () => {
-    if (!bill) return;
+    if (!bill || isSubmitting) return;
     setErrorText('');
 
     const cleanTitle = title.trim();
@@ -89,27 +98,39 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
       return;
     }
 
-    await editBill(bill.id, {
-      title: cleanTitle,
-      category,
-      estimatedAmount: cleanAmount,
-      dueDate,
-      frequency,
-      frequencyDays: frequency === 'custom_days' ? (parseInt(customDays, 10) || 6) : undefined,
-    });
+    setIsSubmitting(true);
+    try {
+      await editBill(bill.id, {
+        title: cleanTitle,
+        category,
+        estimatedAmount: cleanAmount,
+        dueDate,
+        frequency,
+        frequencyDays:
+          frequency === 'custom_days' ? parseInt(customDays, 10) || 6 : undefined,
+      });
 
-    onClose();
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDelete = () => {
+    if (isSubmitting) return;
     setShowDeleteConfirm(true);
   };
 
   const handleConfirmDelete = async () => {
-    if (!bill) return;
+    if (!bill || isSubmitting) return;
     setShowDeleteConfirm(false);
-    await deleteBill(bill.id);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await deleteBill(bill.id);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!bill) return null;
@@ -120,8 +141,8 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
         visible={visible}
         transparent
         animationType="slide"
+        onShow={resetFromBill}
         onRequestClose={onClose}
-        onShow={handleShow}
         statusBarTranslucent
       >
         <KeyboardAvoidingView
@@ -170,6 +191,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                           placeholder="0"
                           placeholderTextColor={colors.line}
                           keyboardType="numeric"
+                          maxLength={10}
                           value={amount}
                           onChangeText={(txt) => setAmount(txt.replace(/[^0-9]/g, ''))}
                         />
@@ -312,6 +334,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                       <TouchableOpacity
                         style={styles.deleteBtn}
                         onPress={handleDelete}
+                        disabled={isSubmitting}
                         activeOpacity={0.8}
                       >
                         <MaterialIcons name="delete-outline" size={18} color={colors.neg} />
@@ -321,6 +344,7 @@ export const EditBillModal: React.FC<EditBillModalProps> = ({
                       <TouchableOpacity
                         style={styles.saveBtn}
                         onPress={handleSave}
+                        disabled={isSubmitting}
                         activeOpacity={0.85}
                       >
                         <MaterialIcons name="check" size={18} color="#FFFFFF" />

@@ -8,7 +8,12 @@ import {
   View,
 } from 'react-native';
 import { colors } from '../theme/colors';
-import { formatDateDisplay, parseDate, toDateString } from '../utils/formatters';
+import {
+  formatDateDisplay,
+  getDaysInMonth,
+  parseDate,
+  toDateString,
+} from '../utils/formatters';
 
 interface DatePickerModalProps {
   visible: boolean;
@@ -25,10 +30,28 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
   onClose,
   title = 'Select Date',
 }) => {
-  const initial = currentDate ? parseDate(currentDate) : new Date();
-  const [selectedYear, setSelectedYear] = useState(initial.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(initial.getMonth()); // 0-indexed
-  const [selectedDay, setSelectedDay] = useState(initial.getDate());
+  const parsed = currentDate ? parseDate(currentDate) : new Date();
+  const baseDate = isNaN(parsed.getTime()) ? new Date() : parsed;
+
+  const [draftYear, setDraftYear] = useState<number | null>(null);
+  const [draftMonth, setDraftMonth] = useState<number | null>(null);
+  const [draftDay, setDraftDay] = useState<number | null>(null);
+
+  const selectedYear = draftYear ?? baseDate.getFullYear();
+  const selectedMonth = draftMonth ?? baseDate.getMonth();
+  const daysInMonth = getDaysInMonth(selectedYear, selectedMonth);
+  const selectedDay = Math.min(draftDay ?? baseDate.getDate(), daysInMonth);
+
+  const resetDrafts = () => {
+    setDraftYear(null);
+    setDraftMonth(null);
+    setDraftDay(null);
+  };
+
+  const handleClose = () => {
+    resetDrafts();
+    onClose();
+  };
 
   const months = [
     'Jan',
@@ -50,6 +73,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
     const dateStr = toDateString(d);
+    resetDrafts();
     onSelect(dateStr);
     onClose();
   };
@@ -58,6 +82,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     const now = new Date();
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const dateStr = toDateString(lastDay);
+    resetDrafts();
     onSelect(dateStr);
     onClose();
   };
@@ -65,26 +90,26 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
   const handleConfirmCustom = () => {
     const d = new Date(selectedYear, selectedMonth, selectedDay);
     const dateStr = toDateString(d);
+    resetDrafts();
     onSelect(dateStr);
     onClose();
   };
-
-  const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onShow={resetDrafts}
+      onRequestClose={handleClose}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
+      <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.backdrop}>
           <TouchableWithoutFeedback>
             <View style={styles.modalContent}>
               <View style={styles.header}>
                 <Text style={styles.title}>{title}</Text>
-                <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   <Text style={styles.closeBtn}>✕</Text>
                 </TouchableOpacity>
               </View>
@@ -134,7 +159,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
                     <TouchableOpacity
                       style={styles.stepperBtn}
                       onPress={() =>
-                        setSelectedDay((d) => (d > 1 ? d - 1 : daysInMonth))
+                        setDraftDay(selectedDay > 1 ? selectedDay - 1 : daysInMonth)
                       }
                     >
                       <Text style={styles.stepperText}>-</Text>
@@ -143,7 +168,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
                     <TouchableOpacity
                       style={styles.stepperBtn}
                       onPress={() =>
-                        setSelectedDay((d) => (d < daysInMonth ? d + 1 : 1))
+                        setDraftDay(selectedDay < daysInMonth ? selectedDay + 1 : 1)
                       }
                     >
                       <Text style={styles.stepperText}>+</Text>
@@ -158,7 +183,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
                     <TouchableOpacity
                       style={styles.stepperBtn}
                       onPress={() =>
-                        setSelectedMonth((m) => (m > 0 ? m - 1 : 11))
+                        setDraftMonth(selectedMonth > 0 ? selectedMonth - 1 : 11)
                       }
                     >
                       <Text style={styles.stepperText}>-</Text>
@@ -167,7 +192,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
                     <TouchableOpacity
                       style={styles.stepperBtn}
                       onPress={() =>
-                        setSelectedMonth((m) => (m < 11 ? m + 1 : 0))
+                        setDraftMonth(selectedMonth < 11 ? selectedMonth + 1 : 0)
                       }
                     >
                       <Text style={styles.stepperText}>+</Text>
@@ -181,14 +206,14 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
                   <View style={styles.stepperContainer}>
                     <TouchableOpacity
                       style={styles.stepperBtn}
-                      onPress={() => setSelectedYear((y) => y - 1)}
+                      onPress={() => setDraftYear(selectedYear - 1)}
                     >
                       <Text style={styles.stepperText}>-</Text>
                     </TouchableOpacity>
                     <Text style={styles.stepperVal}>{selectedYear}</Text>
                     <TouchableOpacity
                       style={styles.stepperBtn}
-                      onPress={() => setSelectedYear((y) => y + 1)}
+                      onPress={() => setDraftYear(selectedYear + 1)}
                     >
                       <Text style={styles.stepperText}>+</Text>
                     </TouchableOpacity>
@@ -211,7 +236,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
               <View style={styles.actionRow}>
                 <TouchableOpacity
                   style={[styles.btn, styles.cancelBtn]}
-                  onPress={onClose}
+                  onPress={handleClose}
                 >
                   <Text style={styles.cancelBtnText}>Cancel</Text>
                 </TouchableOpacity>
